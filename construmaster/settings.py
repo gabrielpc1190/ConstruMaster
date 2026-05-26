@@ -25,6 +25,7 @@ INSTALLED_APPS = [
     "auditlog",
     # Local apps
     "apps.core",
+    "apps.catalogo",
 ]
 
 MIDDLEWARE = [
