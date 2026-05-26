@@ -13,7 +13,7 @@
 
 {% if factura.archivo_original %}
 <p class="mt-4 text-sm">
-  Archivo: <a href="{{ factura.archivo_original.url }}" target="_blank" class="text-blue-600">descargar</a>
+  Archivo: <a href="{% url 'facturas:archivo' pk=factura.pk %}" target="_blank" class="text-blue-600">descargar</a>
 </p>
 {% endif %}
 {% endblock %}

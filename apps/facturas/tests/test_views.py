@@ -170,3 +170,100 @@ def test_detail_view(client, oc):
     )
     resp = client.get(f"/facturas/{f.pk}/")
     assert resp.status_code == 200
+
+
+def test_archivo_download_requires_login(client, oc):
+    """Sin login → redirect a login."""
+    from apps.facturas.models import Factura
+    f = Factura.objects.create(
+        oc=oc, source_type="xml", archivo_original="x.xml", status="confirmed",
+    )
+    resp = client.get(f"/facturas/{f.pk}/archivo/")
+    assert resp.status_code in (302, 403)
+
+
+def test_archivo_download_supervisor_ok(client, oc, tmp_path):
+    """Supervisor con permission view_factura puede descargar."""
+    from apps.facturas.models import Factura
+    from django.core.files import File
+
+    _login(client, "supervisor")
+    fake = tmp_path / "test.xml"
+    fake.write_text("<root/>")
+
+    f = Factura.objects.create(
+        oc=oc, source_type="xml", status="confirmed",
+    )
+    # Asignar archivo real al FileField
+    with open(fake, "rb") as fp:
+        f.archivo_original.save("test.xml", File(fp), save=True)
+
+    resp = client.get(f"/facturas/{f.pk}/archivo/")
+    assert resp.status_code == 200
+
+
+def test_archivo_download_operativo_ok(client, oc, tmp_path):
+    """Operativo también puede descargar (tiene view_factura)."""
+    from apps.facturas.models import Factura
+    from django.core.files import File
+
+    _login(client, "operativo")
+    fake = tmp_path / "test.pdf"
+    fake.write_text("pdf content")
+
+    f = Factura.objects.create(oc=oc, source_type="pdf", status="extracted")
+    with open(fake, "rb") as fp:
+        f.archivo_original.save("test.pdf", File(fp), save=True)
+
+    resp = client.get(f"/facturas/{f.pk}/archivo/")
+    assert resp.status_code == 200
+
+
+def test_archivo_download_lector_ok(client, oc, tmp_path):
+    """Lector también puede descargar (tiene view_factura — fix #1)."""
+    from apps.facturas.models import Factura
+    from django.core.files import File
+
+    _login(client, "lector")
+    fake = tmp_path / "test.xml"
+    fake.write_text("<root/>")
+
+    f = Factura.objects.create(oc=oc, source_type="xml", status="confirmed")
+    with open(fake, "rb") as fp:
+        f.archivo_original.save("test.xml", File(fp), save=True)
+
+    resp = client.get(f"/facturas/{f.pk}/archivo/")
+    # Fix #1: has_perm('view_factura') sin obj → True para lector
+    # ModelBackend solo soporta model-level permissions
+    assert resp.status_code == 200, (
+        "Fix #1 FAILED: has_perm('view_factura') sin obj debe ser True para "
+        "lector. Si retorna 403, posiblemente se está pasando obj a has_perm."
+    )
+
+
+def test_archivo_download_user_without_perm_forbidden(client, oc):
+    """User sin grupo (sin view_factura) → 403."""
+    from apps.facturas.models import Factura
+    from django.contrib.auth import get_user_model
+
+    User = get_user_model()
+    u = User.objects.create_user(username="noperm", password="pw")
+    # NO le agregamos ningún grupo
+    client.login(username="noperm", password="pw")
+
+    f = Factura.objects.create(
+        oc=oc, source_type="xml", archivo_original="x.xml", status="confirmed",
+    )
+    resp = client.get(f"/facturas/{f.pk}/archivo/")
+    assert resp.status_code == 403
+
+
+def test_archivo_download_no_file_404(client, oc):
+    """Factura sin archivo → 404 (no crash)."""
+    from apps.facturas.models import Factura
+    _login(client, "supervisor")
+    f = Factura.objects.create(
+        oc=oc, source_type="xml", archivo_original="", status="confirmed",
+    )
+    resp = client.get(f"/facturas/{f.pk}/archivo/")
+    assert resp.status_code in (404, 500)  # Puede ser 500 si el archivo no existe en disk

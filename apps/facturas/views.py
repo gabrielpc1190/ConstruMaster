@@ -96,3 +96,43 @@ def factura_confirm(request, pk):
 def factura_detail(request, pk):
     f = get_object_or_404(Factura, pk=pk)
     return render(request, "facturas/detail.html", {"factura": f})
+
+
+import mimetypes
+
+from django.http import FileResponse, Http404
+
+
+@login_required
+@permission_required("facturas.view_factura", raise_exception=True)
+def factura_archivo(request, pk):
+    """Descarga autenticada del archivo de una Factura.
+
+    Permission check vía decorator: facturas.view_factura A NIVEL DE MODELO
+    (sin obj). Esto es importante (fix #1 del review externo):
+    ModelBackend nativo de Django devuelve False cuando has_perm() recibe
+    un objeto, así que `has_perm('view_factura', factura)` SIEMPRE
+    retornaría 403. La regla de "todos pueden ver" se aplica con permission
+    model-level — es suficiente en MVP donde todos los operativos/lectores
+    ven todas las obras. django-guardian queda en roadmap para
+    segregación per-obra.
+
+    Devuelve FileResponse streaming (no carga a memoria). Si el archivo
+    no existe en disk o el FileField está vacío, lanza Http404.
+    """
+    f = get_object_or_404(Factura, pk=pk)
+    if not f.archivo_original:
+        raise Http404("Factura sin archivo adjunto")
+    try:
+        file_handle = f.archivo_original.open("rb")
+    except (FileNotFoundError, OSError):
+        raise Http404("Archivo no encontrado en disk")
+
+    filename = f.archivo_original.name.split("/")[-1]
+    content_type, _ = mimetypes.guess_type(filename)
+    response = FileResponse(
+        file_handle,
+        content_type=content_type or "application/octet-stream",
+    )
+    response["Content-Disposition"] = f'inline; filename="{filename}"'
+    return response
