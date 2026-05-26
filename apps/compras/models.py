@@ -237,3 +237,63 @@ class Hito(TimestampedModel):
 
     def __str__(self):
         return f"{self.nombre} ({self.oc_item.descripcion[:40]})"
+
+
+def pago_upload_path(instance, filename):
+    """Layout: obras/<obra_id>-<slug>/ordenes_compra/<oc_id>-<numero_oc>/pagos/<id>-<hash>.<ext>"""
+    import uuid
+    suffix = filename.rsplit(".", 1)[-1].lower() if "." in filename else "bin"
+    short = uuid.uuid4().hex[:8]
+    obra = instance.oc.obra
+    return (
+        f"obras/{obra.pk}-{obra.slug}/ordenes_compra/"
+        f"{instance.oc.pk}-{instance.oc.numero_oc}/pagos/"
+        f"{instance.pk or 'tmp'}-{short}.{suffix}"
+    )
+
+
+class Pago(TimestampedModel):
+    METODO_CHOICES = [
+        ("transferencia", "Transferencia"),
+        ("cheque", "Cheque"),
+        ("efectivo", "Efectivo"),
+        ("tarjeta", "Tarjeta"),
+        ("otro", "Otro"),
+    ]
+
+    oc = models.ForeignKey(OrdenCompra, on_delete=models.PROTECT, related_name="pagos")
+    fecha_programada = models.DateField()
+    fecha_realizada = models.DateField(null=True, blank=True)
+    monto = MoneyField(max_digits=14, decimal_places=2, default_currency="CRC")
+    metodo = models.CharField(max_length=20, choices=METODO_CHOICES)
+    referencia = models.CharField(max_length=120, blank=True)
+    comprobante = models.FileField(upload_to=pago_upload_path, null=True, blank=True)
+    registrado_por = models.ForeignKey(
+        get_user_model(), on_delete=models.PROTECT,
+        related_name="pagos_registrados",
+        null=True, blank=True,
+    )
+    marcado_pagado_por = models.ForeignKey(
+        get_user_model(), null=True, blank=True,
+        on_delete=models.PROTECT, related_name="pagos_marcados",
+    )
+    fx_rate_applied = models.DecimalField(
+        max_digits=12, decimal_places=5, null=True, blank=True,
+    )
+    fx_rate_date = models.DateField(null=True, blank=True)
+    hitos_relacionados = models.ManyToManyField(
+        Hito, blank=True, related_name="pagos",
+    )
+    notas = models.TextField(blank=True)
+
+    class Meta:
+        verbose_name = "Pago"
+        verbose_name_plural = "Pagos"
+        ordering = ["-fecha_programada"]
+        permissions = [
+            ("mark_paid", "Puede marcar Pago como realizado"),
+        ]
+
+    def __str__(self):
+        estado = "realizado" if self.fecha_realizada else "programado"
+        return f"Pago {self.pk} ({estado}, {self.monto})"

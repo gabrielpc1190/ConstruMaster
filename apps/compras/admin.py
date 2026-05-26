@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import SolicitudCotizacion, Cotizacion, CotizacionItem, OrdenCompra, OrdenCompraItem, Hito
+from .models import SolicitudCotizacion, Cotizacion, CotizacionItem, OrdenCompra, OrdenCompraItem, Hito, Pago
 
 
 class CotizacionItemInline(admin.TabularInline):
@@ -55,3 +55,15 @@ class OrdenCompraAdmin(admin.ModelAdmin):
 class HitoAdmin(admin.ModelAdmin):
     list_display = ("__str__", "monto", "fecha_estimada", "completado")
     list_filter = ("completado",)
+
+
+@admin.register(Pago)
+class PagoAdmin(admin.ModelAdmin):
+    list_display = (
+        "__str__", "oc", "fecha_programada", "fecha_realizada",
+        "monto", "metodo", "marcado_pagado_por",
+    )
+    list_filter = ("metodo", "fecha_programada")
+    search_fields = ("referencia", "oc__numero_oc")
+    readonly_fields = ("fx_rate_applied", "fx_rate_date")
+    filter_horizontal = ("hitos_relacionados",)

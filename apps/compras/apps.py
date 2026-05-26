@@ -14,9 +14,11 @@ class ComprasConfig(AppConfig):
             OrdenCompra,
             OrdenCompraItem,
             Hito,
+            Pago,
         )
         auditlog.register(SolicitudCotizacion)
         auditlog.register(Cotizacion)
         auditlog.register(OrdenCompra)
         auditlog.register(OrdenCompraItem)
         auditlog.register(Hito)
+        auditlog.register(Pago)
