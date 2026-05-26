@@ -23,7 +23,8 @@ INSTALLED_APPS = [
     "django_q",
     "djmoney",
     "auditlog",
-    # Local apps (added in later phases)
+    # Local apps
+    "apps.core",
 ]
 
 MIDDLEWARE = [
