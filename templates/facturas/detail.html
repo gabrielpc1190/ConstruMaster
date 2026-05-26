@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="text-2xl font-bold">Factura #{{ factura.pk }}</h1>
+<p>OC: <a href="{% url 'compras:oc_detail' pk=factura.oc.pk %}" class="text-blue-600">{{ factura.oc.numero_oc }}</a></p>
+<p>Tipo origen: {{ factura.get_source_type_display }}</p>
+
+<div id="factura-status"
+     hx-get="{% url 'facturas:status' pk=factura.pk %}"
+     hx-trigger="load, every 2s"
+     hx-swap="outerHTML">
+  Cargando...
+</div>
+
+{% if factura.archivo_original %}
+<p class="mt-4 text-sm">
+  Archivo: <a href="{{ factura.archivo_original.url }}" target="_blank" class="text-blue-600">descargar</a>
+</p>
+{% endif %}
+{% endblock %}

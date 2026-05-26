@@ -1,0 +1,23 @@
+<div id="factura-status"
+     data-status="{{ factura.status }}"
+     class="mt-4 p-3 rounded
+     {% if factura.status == 'extracted' %}bg-blue-50 border border-blue-200
+     {% elif factura.status == 'confirmed' %}bg-green-50 border border-green-200
+     {% else %}bg-red-50 border border-red-200{% endif %}">
+  <span class="badge-{% if factura.status == 'extracted' %}yellow{% elif factura.status == 'confirmed' %}green{% else %}red{% endif %}">
+    {{ factura.get_status_display }}
+  </span>
+
+  {% if factura.status == "extracted" %}
+    <p class="mt-2">Datos extraídos listos para revisión.</p>
+    {% if perms.facturas.confirm_factura %}
+    <a href="{% url 'facturas:confirm' pk=factura.pk %}" class="btn-primary text-sm mt-2 inline-block">Revisar y confirmar</a>
+    {% endif %}
+  {% elif factura.status == "confirmed" %}
+    <p class="mt-2">Factura confirmada por {{ factura.confirmada_por|default:"—" }}.</p>
+    {% if factura.clave_numerica %}<p class="text-sm text-gray-600">Clave: {{ factura.clave_numerica }}</p>{% endif %}
+  {% elif factura.status == "error" %}
+    <p class="mt-2 font-bold">Error en procesamiento:</p>
+    <pre class="text-xs whitespace-pre-wrap">{{ factura.error_message }}</pre>
+  {% endif %}
+</div>
