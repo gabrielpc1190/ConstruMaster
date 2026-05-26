@@ -1,10 +1,12 @@
 """Vistas de dashboards por rol + landing redirect."""
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
+from django.db.models import Count
 from django.shortcuts import redirect, render
 
 from apps.core.models import Obra
-from apps.compras.models import Cotizacion, OrdenCompra, Pago
+from apps.compras.models import Cotizacion, OrdenCompra, Pago, SolicitudCotizacion
+from apps.entregas.models import Entrega
 from apps.facturas.models import Factura
 from apps.catalogo.models import ItemCatalogo
 from apps.compras.services import presupuesto_status
@@ -89,4 +91,64 @@ def dashboard_supervisor(request):
         "facturas_extracted": facturas_extracted,
         "pagos_sin_marcar": pagos_sin_marcar,
         "items_pendientes": items_pendientes_aprobacion,
+    })
+
+
+def _user_is_operativo_or_supervisor(user):
+    return user.is_authenticated and user.groups.filter(
+        name__in=("operativo", "supervisor"),
+    ).exists()
+
+
+@login_required
+def dashboard_operativo(request):
+    """Dashboard para usuarios operativos (ADITA: Tony, Adrián).
+
+    Supervisor también puede acceder (ve todo).
+    """
+    if not _user_is_operativo_or_supervisor(request.user):
+        raise PermissionDenied
+
+    obras_activas = Obra.objects.filter(
+        estado__in=("planificada", "en_curso", "pausada"),
+    ).select_related("cliente").order_by("nombre")
+
+    # RFQs abiertas — anotadas con número de cotizaciones ya recibidas
+    rfqs_abiertas = SolicitudCotizacion.objects.filter(
+        estado="abierta",
+    ).select_related("obra", "categoria").annotate(
+        num_cot=Count("cotizaciones"),
+    ).order_by("-created_at")[:10]
+
+    # OCs autorizadas sin ninguna entrega registrada
+    ocs_sin_entrega = OrdenCompra.objects.filter(
+        estado="autorizada",
+    ).annotate(
+        num_entregas=Count("entregas"),
+    ).filter(num_entregas=0).select_related("obra", "proveedor")[:10]
+
+    # OCs pagadas sin ninguna factura subida
+    ocs_pagadas_sin_factura = OrdenCompra.objects.filter(
+        estado="pagada",
+    ).annotate(
+        num_facturas=Count("facturas"),
+    ).filter(num_facturas=0).select_related("obra", "proveedor")[:10]
+
+    # Cotizaciones recibidas recientes (globales — operativo registra para todas las obras)
+    mis_cotizaciones = Cotizacion.objects.filter(
+        estado="recibida",
+    ).select_related("obra", "proveedor").order_by("-created_at")[:5]
+
+    # Últimas entregas registradas por este usuario
+    mis_entregas = Entrega.objects.filter(
+        registrada_por=request.user,
+    ).select_related("oc").order_by("-fecha")[:5]
+
+    return render(request, "reportes/dashboard_operativo.html", {
+        "obras_activas": obras_activas,
+        "rfqs_abiertas": rfqs_abiertas,
+        "ocs_sin_entrega": ocs_sin_entrega,
+        "ocs_pagadas_sin_factura": ocs_pagadas_sin_factura,
+        "mis_cotizaciones": mis_cotizaciones,
+        "mis_entregas": mis_entregas,
     })

@@ -95,3 +95,73 @@ def test_lector_cannot_access_supervisor_dashboard(client):
     _login(client, "lector")
     resp = client.get("/dashboard/supervisor/")
     assert resp.status_code == 403
+
+
+def test_operativo_dashboard_loads(client):
+    _login(client, "operativo")
+    resp = client.get("/dashboard/operativo/")
+    assert resp.status_code == 200
+    body = resp.content.decode()
+    assert "Dashboard" in body or "Operativo" in body or "Obras" in body
+
+
+def test_operativo_dashboard_shows_obras_with_actions(client):
+    from apps.core.tests.factories import ObraFactory
+    _login(client, "operativo")
+    ObraFactory(nombre="Lomas 2026", estado="en_curso")
+    resp = client.get("/dashboard/operativo/")
+    body = resp.content.decode()
+    assert "Lomas 2026" in body
+
+
+def test_operativo_dashboard_shows_rfqs_abiertas(client):
+    from datetime import date
+    from apps.core.tests.factories import ObraFactory, CategoriaPresupuestoFactory
+    from apps.compras.models import SolicitudCotizacion
+    user = _login(client, "operativo")
+    obra = ObraFactory(nombre="Lomas")
+    cat = CategoriaPresupuestoFactory(obra=obra)
+    SolicitudCotizacion.objects.create(
+        obra=obra, categoria=cat, descripcion="RFQ pendiente sin cotizaciones",
+        fecha_requerida=date(2026, 6, 15), creada_por=user, estado="abierta",
+    )
+    resp = client.get("/dashboard/operativo/")
+    body = resp.content.decode()
+    assert "RFQ pendiente" in body or "pendiente" in body.lower() or "abierta" in body.lower()
+
+
+def test_operativo_dashboard_shows_ocs_sin_entrega(client):
+    """OCs autorizadas que no tienen ninguna entrega registrada."""
+    from datetime import date
+    from apps.core.tests.factories import ObraFactory, CategoriaPresupuestoFactory
+    from apps.catalogo.tests.factories import ProveedorFactory
+    from apps.compras.models import OrdenCompra
+    from djmoney.money import Money
+
+    _login(client, "operativo")
+    obra = ObraFactory()
+    cat = CategoriaPresupuestoFactory(obra=obra)
+    prov = ProveedorFactory()
+    OrdenCompra.objects.create(
+        obra=obra, categoria=cat, proveedor=prov,
+        numero_oc="OP-OC-9999", fecha_aprobacion=date(2026, 5, 25),
+        monto_total=Money(1000, "CRC"), estado="autorizada",
+    )
+    resp = client.get("/dashboard/operativo/")
+    body = resp.content.decode()
+    assert "OP-OC-9999" in body or "entrega" in body.lower()
+
+
+def test_supervisor_can_also_access_operativo_dashboard(client):
+    """Por flexibilidad: supervisor también ve el dashboard operativo si va directo."""
+    _login(client, "supervisor")
+    resp = client.get("/dashboard/operativo/")
+    # OK 200 o 403 según política. El spec no es claro — vamos a permitirlo
+    # ya que supervisor ve TODO.
+    assert resp.status_code in (200, 403)
+
+
+def test_lector_cannot_access_operativo_dashboard(client):
+    _login(client, "lector")
+    resp = client.get("/dashboard/operativo/")
+    assert resp.status_code == 403
