@@ -28,6 +28,7 @@ INSTALLED_APPS = [
     "apps.catalogo",
     "apps.finance",
     "apps.compras",
+    "apps.facturas",
 ]
 
 MIDDLEWARE = [
