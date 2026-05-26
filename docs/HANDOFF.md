@@ -150,3 +150,12 @@ Documentadas en spec con explicación inline. Los más críticos para ejecución
 - **GitHub:** SSH only (`git@github.com:gabrielpc1190/...`), nunca HTTPS.
 - **Autonomía:** adelante con cambios pequeños; plan/spec antes de refactors multi-archivo o cambios de infra.
 - **Software nuevo:** análisis de riesgos antes de instalar herramientas con permisos amplios.
+
+## Deuda técnica conocida (registrada 2026-05-25)
+
+- **I1: `pip install -e .[dev]` en Dockerfile.** Instala dependencias de desarrollo (pytest, factory-boy, ruff, ipython) en la imagen de producción. Para MVP es aceptable (corremos tests dentro del contenedor); para producción real conviene:
+  - Generar `uv.lock` o `requirements.txt` con versiones pinneadas.
+  - Multi-stage build: stage `dev` con `.[dev]`, stage `prod` con solo deps principales (sin `-e`, sin extras).
+  - Issue raised in code quality review of commit `280963c`.
+- **Hadolint DL3008:** versiones de paquetes apt sin pinnear en Dockerfile. Aceptable hoy porque python:3.13-slim usa Debian Bookworm con versiones estables.
+- **Worker sin `USER` no-root.** Mejora de seguridad para iteraciones futuras.

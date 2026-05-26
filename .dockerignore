@@ -1,0 +1,60 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Secrets — NUNCA en la imagen
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.crt
+
+# Python bytecode/cache
+__pycache__
+**/__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Test / lint caches
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.tox
+.coverage
+.coverage.*
+htmlcov
+
+# Virtual envs (no deberían estar en el repo pero por las dudas)
+.venv
+venv
+env
+
+# Documentation (no se necesita en runtime)
+docs/
+
+# IDE / OS
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Logs
+*.log
+
+# Backups / DB dumps
+*.dump
+*.sql
+*.tar.zst
+backups/
+
+# Docker
+Dockerfile
+docker-compose.override.yml
+.dockerignore
