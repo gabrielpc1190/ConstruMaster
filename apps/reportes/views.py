@@ -162,6 +162,113 @@ def dashboard_operativo(request):
     })
 
 
+from django.shortcuts import get_object_or_404
+
+from apps.catalogo.models import Proveedor
+from apps.entregas.services import compras_vs_entregas_por_material
+from apps.finance.models import ExchangeRate
+
+from .exporters import csv_response
+
+
+@login_required
+def reporte_proveedor(request, proveedor_pk):
+    """Estado de cuenta por proveedor: OCs + Pagos.
+
+    Si ?format=csv, devuelve CSV; sino HTML.
+    """
+    proveedor = get_object_or_404(Proveedor, pk=proveedor_pk)
+    ocs = OrdenCompra.objects.filter(
+        proveedor=proveedor,
+    ).select_related("obra").order_by("-fecha_aprobacion")
+
+    if request.GET.get("format") == "csv":
+        rows = []
+        for oc in ocs:
+            total_pagado = sum(
+                (p.monto.amount for p in oc.pagos.filter(fecha_realizada__isnull=False)),
+                start=0,
+            )
+            rows.append([
+                oc.numero_oc,
+                oc.obra.nombre,
+                oc.fecha_aprobacion.isoformat(),
+                str(oc.monto_total),
+                str(total_pagado),
+                oc.get_estado_display(),
+            ])
+        return csv_response(
+            rows,
+            filename=f"proveedor_{proveedor.pk}_estado_cuenta.csv",
+            headers=["OC", "Obra", "Fecha", "Monto OC", "Pagado", "Estado"],
+        )
+
+    return render(request, "reportes/proveedor.html", {
+        "proveedor": proveedor,
+        "ocs": ocs,
+    })
+
+
+@login_required
+def reporte_reconciliacion(request, obra_pk):
+    """Reconciliación material × obra: comprado vs entregado."""
+    from apps.catalogo.models import ItemCatalogo
+    from apps.compras.models import OrdenCompraItem
+
+    obra = get_object_or_404(Obra, pk=obra_pk)
+
+    # Encontrar todos los materiales que aparecen en OCs de esta obra
+    materiales_pks = OrdenCompraItem.objects.filter(
+        oc__obra=obra, material__isnull=False,
+    ).values_list("material", flat=True).distinct()
+    materiales = ItemCatalogo.objects.filter(pk__in=materiales_pks)
+
+    reconciliacion = []
+    for material in materiales:
+        data = compras_vs_entregas_por_material(obra, material)
+        reconciliacion.append({
+            "material": material,
+            "comprado": data["comprado"],
+            "entregado": data["entregado"],
+            "pendiente": data["pendiente"],
+        })
+
+    if request.GET.get("format") == "csv":
+        rows = [
+            [r["material"].nombre_canonico, r["material"].unidad, r["comprado"], r["entregado"], r["pendiente"]]
+            for r in reconciliacion
+        ]
+        return csv_response(
+            rows,
+            filename=f"reconciliacion_obra_{obra.pk}.csv",
+            headers=["Material", "Unidad", "Comprado", "Entregado", "Pendiente"],
+        )
+
+    return render(request, "reportes/reconciliacion.html", {
+        "obra": obra,
+        "reconciliacion": reconciliacion,
+    })
+
+
+@login_required
+def reporte_tipo_cambio(request):
+    """Histórico de tipo de cambio del BCCR."""
+    rates = ExchangeRate.objects.filter(currency="USD").order_by("-date")[:90]
+
+    if request.GET.get("format") == "csv":
+        rows = [
+            [r.date.isoformat(), str(r.buy), str(r.sell), r.source]
+            for r in rates
+        ]
+        return csv_response(
+            rows,
+            filename="tipo_cambio_usd.csv",
+            headers=["Fecha", "Compra", "Venta", "Fuente"],
+        )
+
+    return render(request, "reportes/tipo_cambio.html", {"rates": rates})
+
+
 @login_required
 def dashboard_lector(request):
     """Dashboard de solo lectura para Don Nicholas (lector).

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="text-2xl font-bold">Histórico tipo de cambio USD</h1>
+<p class="text-sm text-gray-500">Últimos 90 días (BCCR)</p>
+<a href="?format=csv" class="btn-secondary text-sm mt-2 inline-block">Exportar CSV</a>
+
+<table class="w-full bg-white shadow rounded text-sm mt-4">
+  <thead><tr class="border-b">
+    <th class="text-left p-2">Fecha</th>
+    <th class="text-right p-2">Compra</th>
+    <th class="text-right p-2">Venta</th>
+    <th class="text-left p-2">Fuente</th>
+  </tr></thead>
+  <tbody>
+  {% for r in rates %}
+  <tr>
+    <td class="p-2">{{ r.date }}</td>
+    <td class="p-2 text-right">{{ r.buy }}</td>
+    <td class="p-2 text-right">{{ r.sell }}</td>
+    <td class="p-2">{{ r.source }}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="4" class="p-2 text-gray-500">Sin datos de TC.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

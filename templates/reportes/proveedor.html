@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="text-2xl font-bold">Estado de cuenta: {{ proveedor.nombre }}</h1>
+<p class="text-sm text-gray-500">Cédula: {{ proveedor.identificacion|default:"—" }}</p>
+
+<a href="?format=csv" class="btn-secondary text-sm mt-2 inline-block">Exportar CSV</a>
+
+<table class="w-full bg-white shadow rounded text-sm mt-4">
+  <thead><tr class="border-b">
+    <th class="text-left p-2">OC</th>
+    <th class="text-left p-2">Obra</th>
+    <th class="text-left p-2">Fecha</th>
+    <th class="text-right p-2">Monto</th>
+    <th class="text-left p-2">Estado</th>
+  </tr></thead>
+  <tbody>
+  {% for oc in ocs %}
+  <tr>
+    <td class="p-2"><a href="{% url 'compras:oc_detail' pk=oc.pk %}" class="text-blue-600">{{ oc.numero_oc }}</a></td>
+    <td class="p-2">{{ oc.obra.nombre }}</td>
+    <td class="p-2">{{ oc.fecha_aprobacion }}</td>
+    <td class="p-2 text-right">{{ oc.monto_total }}</td>
+    <td class="p-2">{{ oc.get_estado_display }}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="5" class="p-2 text-gray-500">Sin OCs.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

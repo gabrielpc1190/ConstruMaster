@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="text-2xl font-bold">Reconciliación material × obra: {{ obra.nombre }}</h1>
+<a href="?format=csv" class="btn-secondary text-sm mt-2 inline-block">Exportar CSV</a>
+
+<table class="w-full bg-white shadow rounded text-sm mt-4">
+  <thead><tr class="border-b">
+    <th class="text-left p-2">Material</th>
+    <th class="text-left p-2">Unidad</th>
+    <th class="text-right p-2">Comprado</th>
+    <th class="text-right p-2">Entregado</th>
+    <th class="text-right p-2">Pendiente</th>
+  </tr></thead>
+  <tbody>
+  {% for r in reconciliacion %}
+  <tr>
+    <td class="p-2">{{ r.material.nombre_canonico }}</td>
+    <td class="p-2">{{ r.material.unidad }}</td>
+    <td class="p-2 text-right">{{ r.comprado }}</td>
+    <td class="p-2 text-right">{{ r.entregado }}</td>
+    <td class="p-2 text-right
+        {% if r.pendiente > 0 %}text-yellow-600
+        {% elif r.pendiente < 0 %}text-red-600
+        {% else %}text-green-600{% endif %}">{{ r.pendiente }}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="5" class="p-2 text-gray-500">Sin materiales identificados.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

@@ -240,3 +240,129 @@ def test_operativo_can_access_lector_dashboard(client):
     resp = client.get("/dashboard/lector/")
     # Política: todos los autenticados pueden ver dashboard lector
     assert resp.status_code == 200
+
+
+def test_reporte_proveedor_loads(client):
+    from datetime import date
+    from apps.core.tests.factories import ObraFactory, CategoriaPresupuestoFactory
+    from apps.catalogo.tests.factories import ProveedorFactory
+    from apps.compras.models import OrdenCompra
+    from djmoney.money import Money
+
+    _login(client, "supervisor")
+    obra = ObraFactory()
+    cat = CategoriaPresupuestoFactory(obra=obra)
+    prov = ProveedorFactory(nombre="Mat La Costa")
+    OrdenCompra.objects.create(
+        obra=obra, categoria=cat, proveedor=prov,
+        numero_oc="REP-OC-0001", fecha_aprobacion=date(2026, 5, 25),
+        monto_total=Money(1000, "CRC"), estado="autorizada",
+    )
+    resp = client.get(f"/reportes/proveedor/{prov.pk}/")
+    assert resp.status_code == 200
+    body = resp.content.decode()
+    assert "Mat La Costa" in body
+    assert "REP-OC-0001" in body
+
+
+def test_reporte_proveedor_csv_export(client):
+    from datetime import date
+    from apps.core.tests.factories import ObraFactory, CategoriaPresupuestoFactory
+    from apps.catalogo.tests.factories import ProveedorFactory
+    from apps.compras.models import OrdenCompra
+    from djmoney.money import Money
+
+    _login(client, "supervisor")
+    obra = ObraFactory()
+    cat = CategoriaPresupuestoFactory(obra=obra)
+    prov = ProveedorFactory(nombre="Test CSV")
+    OrdenCompra.objects.create(
+        obra=obra, categoria=cat, proveedor=prov,
+        numero_oc="CSV-OC-001", fecha_aprobacion=date(2026, 5, 25),
+        monto_total=Money(500, "CRC"), estado="autorizada",
+    )
+    resp = client.get(f"/reportes/proveedor/{prov.pk}/?format=csv")
+    assert resp.status_code == 200
+    assert resp["Content-Type"].startswith("text/csv")
+    body = resp.content.decode("utf-8")
+    assert "CSV-OC-001" in body
+    assert "500" in body
+
+
+def test_reporte_reconciliacion_loads(client):
+    from apps.core.tests.factories import ObraFactory
+    _login(client, "supervisor")
+    obra = ObraFactory(nombre="Casa Rec")
+    resp = client.get(f"/reportes/reconciliacion/{obra.pk}/")
+    assert resp.status_code == 200
+
+
+def test_reporte_reconciliacion_shows_comprado_vs_entregado(client):
+    from datetime import date
+    from decimal import Decimal
+    from apps.core.tests.factories import ObraFactory, CategoriaPresupuestoFactory
+    from apps.catalogo.tests.factories import ProveedorFactory, ItemCatalogoFactory
+    from apps.compras.models import OrdenCompra, OrdenCompraItem
+    from djmoney.money import Money
+
+    _login(client, "supervisor")
+    obra = ObraFactory()
+    cat = CategoriaPresupuestoFactory(obra=obra)
+    prov = ProveedorFactory()
+    cemento = ItemCatalogoFactory(nombre_canonico="Cemento R", unidad="saco")
+
+    oc = OrdenCompra.objects.create(
+        obra=obra, categoria=cat, proveedor=prov,
+        numero_oc="REC-OC", fecha_aprobacion=date(2026, 5, 25),
+        monto_total=Money(1000, "CRC"), estado="autorizada",
+    )
+    OrdenCompraItem.objects.create(
+        oc=oc, material=cemento,
+        material_nombre_snapshot="Cemento R", material_unidad_snapshot="saco",
+        descripcion="X", cantidad=Decimal("100"),
+        unidad="saco", precio_unitario=Decimal("10"),
+        subtotal=Decimal("1000"), iva_monto=Decimal("0"), orden=1,
+    )
+
+    resp = client.get(f"/reportes/reconciliacion/{obra.pk}/")
+    body = resp.content.decode()
+    assert "Cemento R" in body
+    assert "100" in body  # comprado
+
+
+def test_reporte_tipo_cambio_loads(client):
+    from datetime import date
+    from decimal import Decimal
+    from apps.finance.models import ExchangeRate
+
+    _login(client, "supervisor")
+    ExchangeRate.objects.create(
+        currency="USD", date=date(2026, 5, 25),
+        buy=Decimal("447.5"), sell=Decimal("454.82"),
+    )
+    resp = client.get("/reportes/tipo-cambio/")
+    assert resp.status_code == 200
+    body = resp.content.decode()
+    assert "454.82" in body or "454,82" in body or "USD" in body
+
+
+def test_reporte_tipo_cambio_csv(client):
+    from datetime import date
+    from decimal import Decimal
+    from apps.finance.models import ExchangeRate
+
+    _login(client, "supervisor")
+    ExchangeRate.objects.create(
+        currency="USD", date=date(2026, 5, 25),
+        buy=Decimal("447.5"), sell=Decimal("454.82"),
+    )
+    resp = client.get("/reportes/tipo-cambio/?format=csv")
+    assert resp.status_code == 200
+    assert resp["Content-Type"].startswith("text/csv")
+    body = resp.content.decode("utf-8")
+    assert "454.82" in body
+
+
+def test_reportes_require_login(client):
+    resp = client.get("/reportes/tipo-cambio/")
+    assert resp.status_code in (302, 403)
