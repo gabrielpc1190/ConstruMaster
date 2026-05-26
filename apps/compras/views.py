@@ -12,9 +12,11 @@ from .forms import (
     SolicitudCotizacionForm,
     CotizacionForm,
     CotizacionItemFormSet,
+    PagoProgramarForm,
+    PagoMarcarPagadoForm,
 )
-from .models import SolicitudCotizacion, Cotizacion, OrdenCompra
-from .services import approve_cotizacion, presupuesto_status, AlreadyApproved
+from .models import SolicitudCotizacion, Cotizacion, OrdenCompra, Pago
+from .services import approve_cotizacion, presupuesto_status, AlreadyApproved, mark_pago_paid
 
 
 @login_required
@@ -135,3 +137,49 @@ def oc_detail(request, pk):
     """Detalle de una OrdenCompra con items snapshot y hitos."""
     oc = get_object_or_404(OrdenCompra, pk=pk)
     return render(request, "compras/oc_detail.html", {"oc": oc})
+
+
+@login_required
+@permission_required("compras.add_pago", raise_exception=True)
+def pago_programar(request, oc_pk):
+    """Crea un Pago programado para una OC (spec §6.5)."""
+    oc = get_object_or_404(OrdenCompra, pk=oc_pk)
+    if request.method == "POST":
+        form = PagoProgramarForm(request.POST)
+        if form.is_valid():
+            p = form.save(commit=False)
+            p.oc = oc
+            p.registrado_por = request.user
+            p.save()
+            messages.success(request, f"Pago programado por {p.monto}")
+            return redirect("compras:oc_detail", pk=oc.pk)
+    else:
+        form = PagoProgramarForm()
+    return render(request, "compras/pago_programar.html", {"oc": oc, "form": form})
+
+
+@login_required
+@permission_required("compras.mark_paid", raise_exception=True)
+def pago_marcar_pagado(request, pk):
+    """Marca un Pago programado como realizado (spec §6.5). Solo supervisor."""
+    pago = get_object_or_404(Pago, pk=pk)
+    if pago.fecha_realizada:
+        messages.warning(request, "Este pago ya está marcado como realizado.")
+        return redirect("compras:oc_detail", pk=pago.oc.pk)
+
+    if request.method == "POST":
+        form = PagoMarcarPagadoForm(request.POST, request.FILES, instance=pago)
+        if form.is_valid():
+            pago = form.save(commit=False)
+            mark_pago_paid(
+                pago, by=request.user, on=form.cleaned_data["fecha_realizada"],
+            )
+            messages.success(request, "Pago marcado como realizado")
+            return redirect("compras:oc_detail", pk=pago.oc.pk)
+    else:
+        form = PagoMarcarPagadoForm(
+            instance=pago,
+            initial={"fecha_realizada": date_type.today()},
+        )
+    return render(request, "compras/pago_marcar_pagado.html",
+                  {"pago": pago, "form": form})

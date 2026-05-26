@@ -49,3 +49,36 @@ CotizacionItemFormSet = inlineformset_factory(
     extra=1,
     can_delete=True,
 )
+
+
+from .models import Pago  # noqa: E402
+
+
+class PagoProgramarForm(forms.ModelForm):
+    class Meta:
+        model = Pago
+        fields = ["fecha_programada", "monto", "metodo", "referencia", "notas"]
+        widgets = {
+            "fecha_programada": forms.DateInput(attrs={"type": "date"}),
+            "notas": forms.Textarea(attrs={"rows": 2}),
+        }
+
+
+class PagoMarcarPagadoForm(forms.ModelForm):
+    fecha_realizada = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
+
+    class Meta:
+        model = Pago
+        fields = ["fecha_realizada", "referencia", "comprobante", "notas"]
+        widgets = {
+            "notas": forms.Textarea(attrs={"rows": 2}),
+        }
+
+    def clean_comprobante(self):
+        from django.conf import settings
+        f = self.cleaned_data.get("comprobante")
+        if f and f.size > settings.MAX_UPLOAD_SIZE:
+            raise forms.ValidationError(
+                f"Archivo excede {settings.MAX_UPLOAD_SIZE // 1024 // 1024} MB."
+            )
+        return f

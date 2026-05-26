@@ -13,4 +13,6 @@ urlpatterns = [
     path("cotizacion/<int:pk>/", views.cotizacion_detail, name="cotizacion_detail"),
     path("cotizacion/<int:pk>/approve/", views.cotizacion_approve, name="cotizacion_approve"),
     path("oc/<int:pk>/", views.oc_detail, name="oc_detail"),
+    path("oc/<int:oc_pk>/pago/programar/", views.pago_programar, name="pago_programar"),
+    path("pago/<int:pk>/marcar-pagado/", views.pago_marcar_pagado, name="pago_marcar_pagado"),
 ]
