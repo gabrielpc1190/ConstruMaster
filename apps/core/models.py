@@ -1,5 +1,6 @@
 from django.db import models
 from django.utils.text import slugify
+from djmoney.models.fields import MoneyField
 
 
 class TimestampedModel(models.Model):
@@ -66,3 +67,33 @@ class Obra(TimestampedModel):
 
     def __str__(self):
         return f"{self.nombre} ({self.cliente.nombre})"
+
+
+class CategoriaPresupuesto(TimestampedModel):
+    obra = models.ForeignKey(Obra, on_delete=models.CASCADE, related_name="categorias")
+    nombre = models.CharField(max_length=100)
+    orden = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        verbose_name = "Categoría de presupuesto"
+        verbose_name_plural = "Categorías de presupuesto"
+        ordering = ["obra", "orden", "nombre"]
+        unique_together = [("obra", "nombre")]
+
+    def __str__(self):
+        return f"{self.nombre} ({self.obra})"
+
+
+class Presupuesto(TimestampedModel):
+    obra = models.ForeignKey(Obra, on_delete=models.CASCADE, related_name="presupuestos")
+    categoria = models.ForeignKey(CategoriaPresupuesto, on_delete=models.CASCADE)
+    monto = MoneyField(max_digits=14, decimal_places=2, default_currency="CRC")
+    notas = models.TextField(blank=True)
+
+    class Meta:
+        verbose_name = "Presupuesto"
+        verbose_name_plural = "Presupuestos"
+        unique_together = [("obra", "categoria")]
+
+    def __str__(self):
+        return f"{self.categoria.nombre}: {self.monto}"

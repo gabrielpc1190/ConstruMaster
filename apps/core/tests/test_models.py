@@ -39,3 +39,46 @@ def test_obra_str_includes_cliente():
     c = Cliente.objects.create(nombre="Nicholas", identificacion="A-1")
     o = Obra.objects.create(cliente=c, nombre="Casa Lomas")
     assert str(o) == "Casa Lomas (Nicholas)"
+
+
+def test_categoria_presupuesto_por_obra():
+    from apps.core.models import Cliente, Obra, CategoriaPresupuesto
+    c = Cliente.objects.create(nombre="Nicholas", identificacion="A-1")
+    o = Obra.objects.create(cliente=c, nombre="Casa Lomas")
+    cat = CategoriaPresupuesto.objects.create(obra=o, nombre="Estructura", orden=1)
+    assert cat.obra == o
+    assert str(cat) == "Estructura (Casa Lomas (Nicholas))"
+
+
+def test_categoria_unique_per_obra():
+    from apps.core.models import Cliente, Obra, CategoriaPresupuesto
+    from django.db import IntegrityError
+    c = Cliente.objects.create(nombre="N", identificacion="X")
+    o = Obra.objects.create(cliente=c, nombre="O")
+    CategoriaPresupuesto.objects.create(obra=o, nombre="Estructura", orden=1)
+    with pytest.raises(IntegrityError):
+        CategoriaPresupuesto.objects.create(obra=o, nombre="Estructura", orden=2)
+
+
+def test_presupuesto_creation():
+    from apps.core.models import Cliente, Obra, CategoriaPresupuesto, Presupuesto
+    from djmoney.money import Money
+    c = Cliente.objects.create(nombre="Nicholas", identificacion="A-1")
+    o = Obra.objects.create(cliente=c, nombre="Casa Lomas")
+    cat = CategoriaPresupuesto.objects.create(obra=o, nombre="Estructura", orden=1)
+    p = Presupuesto.objects.create(obra=o, categoria=cat, monto=Money(10_000_000, "CRC"))
+    assert p.monto.amount == 10_000_000
+    assert p.monto.currency.code == "CRC"
+    assert "Estructura" in str(p) and "₡" in str(p)
+
+
+def test_presupuesto_unique_per_obra_categoria():
+    from apps.core.models import Cliente, Obra, CategoriaPresupuesto, Presupuesto
+    from djmoney.money import Money
+    from django.db import IntegrityError
+    c = Cliente.objects.create(nombre="N", identificacion="X")
+    o = Obra.objects.create(cliente=c, nombre="O")
+    cat = CategoriaPresupuesto.objects.create(obra=o, nombre="Cat", orden=1)
+    Presupuesto.objects.create(obra=o, categoria=cat, monto=Money(1, "CRC"))
+    with pytest.raises(IntegrityError):
+        Presupuesto.objects.create(obra=o, categoria=cat, monto=Money(2, "CRC"))

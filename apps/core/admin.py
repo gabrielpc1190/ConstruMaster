@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Cliente, Obra
+from .models import Cliente, Obra, CategoriaPresupuesto, Presupuesto
 
 
 @admin.register(Cliente)
@@ -15,3 +15,16 @@ class ObraAdmin(admin.ModelAdmin):
     search_fields = ("nombre", "slug")
     prepopulated_fields = {"slug": ("nombre",)}
     readonly_fields = ("next_oc_seq",)
+
+
+@admin.register(CategoriaPresupuesto)
+class CategoriaPresupuestoAdmin(admin.ModelAdmin):
+    list_display = ("nombre", "obra", "orden")
+    list_filter = ("obra",)
+    ordering = ("obra", "orden")
+
+
+@admin.register(Presupuesto)
+class PresupuestoAdmin(admin.ModelAdmin):
+    list_display = ("categoria", "obra", "monto")
+    list_filter = ("obra",)
