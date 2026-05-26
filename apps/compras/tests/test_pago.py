@@ -139,3 +139,155 @@ def test_pago_fx_snapshot_fields(oc_simple):
     )
     assert p.fx_rate_applied == Decimal("454.82")
     assert p.fx_rate_date == date(2026, 5, 25)
+
+
+def test_mark_pago_paid_transitions_oc_to_pagada_parcial(oc_simple):
+    """Pago parcial → OC pasa a pagada_parcial."""
+    from apps.compras.models import Pago
+    from apps.compras.services import mark_pago_paid
+    from django.contrib.auth import get_user_model
+
+    p = Pago.objects.create(
+        oc=oc_simple,
+        fecha_programada=date(2026, 5, 25),
+        monto=Money(500, "USD"),  # 50% de la OC de 1000 USD
+        metodo="transferencia",
+    )
+    user = get_user_model().objects.create_user("diana_partial")
+    mark_pago_paid(p, by=user, on=date(2026, 5, 25))
+
+    p.refresh_from_db()
+    oc_simple.refresh_from_db()
+    assert p.fecha_realizada == date(2026, 5, 25)
+    assert p.marcado_pagado_por == user
+    assert oc_simple.estado == "pagada_parcial"
+
+
+def test_mark_pago_paid_transitions_oc_to_pagada_when_full(oc_simple):
+    """Pago completo → OC pasa a pagada."""
+    from apps.compras.models import Pago
+    from apps.compras.services import mark_pago_paid
+    from django.contrib.auth import get_user_model
+
+    user = get_user_model().objects.create_user("diana_full")
+    # OC = 1000 USD. Dos pagos 400 + 600 = 1000.
+    p1 = Pago.objects.create(
+        oc=oc_simple, fecha_programada=date(2026, 5, 25),
+        monto=Money(400, "USD"), metodo="transferencia",
+    )
+    p2 = Pago.objects.create(
+        oc=oc_simple, fecha_programada=date(2026, 5, 25),
+        monto=Money(600, "USD"), metodo="transferencia",
+    )
+    mark_pago_paid(p1, by=user, on=date(2026, 5, 25))
+    oc_simple.refresh_from_db()
+    assert oc_simple.estado == "pagada_parcial"  # solo 40%
+
+    mark_pago_paid(p2, by=user, on=date(2026, 5, 25))
+    oc_simple.refresh_from_db()
+    assert oc_simple.estado == "pagada"
+
+
+def test_mark_pago_normaliza_moneda_oc_usd_pago_crc(oc_simple):
+    """FIX #12: OC en USD pagada en CRC se normaliza con convert()."""
+    from apps.compras.models import Pago
+    from apps.compras.services import mark_pago_paid
+    from django.contrib.auth import get_user_model
+
+    user = get_user_model().objects.create_user("diana_norm")
+    # OC: 1000 USD ≈ 454,820 CRC al TC 454.82
+    # Pago en CRC equivalente a 1000 USD: 454820 CRC
+    p = Pago.objects.create(
+        oc=oc_simple, fecha_programada=date(2026, 5, 25),
+        monto=Money(454820, "CRC"), metodo="transferencia",
+    )
+    mark_pago_paid(p, by=user, on=date(2026, 5, 25))
+    oc_simple.refresh_from_db()
+    # 454820 CRC / 454.82 = 1000 USD exactos → pagada (no parcial)
+    assert oc_simple.estado == "pagada"
+
+
+def test_mark_pago_paid_snapshot_fx_rate(oc_simple):
+    """Si moneda != CRC, captura fx_rate_applied/fx_rate_date."""
+    from apps.compras.models import Pago
+    from apps.compras.services import mark_pago_paid
+    from django.contrib.auth import get_user_model
+
+    user = get_user_model().objects.create_user("u_fx")
+    p = Pago.objects.create(
+        oc=oc_simple, fecha_programada=date(2026, 5, 25),
+        monto=Money(100, "USD"), metodo="transferencia",
+    )
+    mark_pago_paid(p, by=user, on=date(2026, 5, 25))
+    p.refresh_from_db()
+    assert p.fx_rate_applied is not None
+    assert p.fx_rate_date == date(2026, 5, 25)
+
+
+def test_mark_pago_paid_partial_two_currencies(oc_simple):
+    """Dos pagos: 400 USD + 270000 CRC ≈ 593.65 USD; total ≈ 993.65 < 1000 USD → pagada_parcial."""
+    from apps.compras.models import Pago
+    from apps.compras.services import mark_pago_paid
+    from django.contrib.auth import get_user_model
+
+    user = get_user_model().objects.create_user("u_mixed")
+    # OC: 1000 USD. Pago 1: 400 USD. Pago 2: 270000 CRC.
+    # 270000 / 454.82 = ~593.65 USD. Total = 993.65 USD < 1000 → parcial.
+    p1 = Pago.objects.create(
+        oc=oc_simple, fecha_programada=date(2026, 5, 25),
+        monto=Money(400, "USD"), metodo="transferencia",
+    )
+    p2 = Pago.objects.create(
+        oc=oc_simple, fecha_programada=date(2026, 5, 25),
+        monto=Money(270000, "CRC"), metodo="transferencia",
+    )
+    mark_pago_paid(p1, by=user, on=date(2026, 5, 25))
+    mark_pago_paid(p2, by=user, on=date(2026, 5, 25))
+    oc_simple.refresh_from_db()
+    assert oc_simple.estado == "pagada_parcial"
+
+
+def test_mark_pago_paid_does_not_transition_completed_oc(oc_simple):
+    """Si OC está en estado terminal (completada/cancelada), no cambia."""
+    from apps.compras.models import Pago
+    from apps.compras.services import mark_pago_paid
+    from django.contrib.auth import get_user_model
+
+    user = get_user_model().objects.create_user("u_term")
+    # Forzar OC a estado completada
+    oc_simple.estado = "completada"
+    oc_simple.save()
+    p = Pago.objects.create(
+        oc=oc_simple, fecha_programada=date(2026, 5, 25),
+        monto=Money(2000, "USD"), metodo="transferencia",  # exceso
+    )
+    mark_pago_paid(p, by=user, on=date(2026, 5, 25))
+    oc_simple.refresh_from_db()
+    assert oc_simple.estado == "completada"  # NO cambia
+
+
+def test_mark_pago_paid_same_currency_no_fx_snapshot():
+    """Pago en CRC sobre OC en CRC: no captura fx (no aplica conversion)."""
+    from apps.core.tests.factories import ObraFactory, CategoriaPresupuestoFactory
+    from apps.catalogo.tests.factories import ProveedorFactory
+    from apps.compras.models import OrdenCompra, Pago
+    from apps.compras.services import mark_pago_paid
+    from django.contrib.auth import get_user_model
+
+    obra = ObraFactory()
+    cat = CategoriaPresupuestoFactory(obra=obra)
+    prov = ProveedorFactory()
+    oc = OrdenCompra.objects.create(
+        obra=obra, categoria=cat, proveedor=prov,
+        numero_oc="C-OC-0001", fecha_aprobacion=date(2026, 5, 25),
+        moneda="CRC", monto_total=Money(100000, "CRC"),
+        estado="autorizada",
+    )
+    user = get_user_model().objects.create_user("u_crc_only")
+    p = Pago.objects.create(
+        oc=oc, fecha_programada=date(2026, 5, 25),
+        monto=Money(50000, "CRC"), metodo="transferencia",
+    )
+    mark_pago_paid(p, by=user, on=date(2026, 5, 25))
+    p.refresh_from_db()
+    assert p.fx_rate_applied is None  # mismo currency, no aplica

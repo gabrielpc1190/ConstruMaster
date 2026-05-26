@@ -129,6 +129,79 @@ def approve_cotizacion(
     return oc
 
 
+@transaction.atomic
+def mark_pago_paid(pago, by, on: date_type):
+    """Marca un Pago como realizado y transiciona la OC al estado apropiado.
+
+    Implementa fix #12 del review externo: la suma de pagos debe normalizar
+    la moneda usando convert() con el TC del día de cada pago. Una OC en USD
+    puede tener pagos en CRC (común: girar desde cuenta bancaria local) y
+    viceversa.
+
+    Si pago.monto.currency != CRC, snapshot del fx_rate aplicado para el
+    día del pago — sin esto, la conversión histórica posterior usaría el
+    TC actual.
+
+    Solo transiciona OCs en estado "autorizada" o "pagada_parcial".
+    Estados terminales (pagada, completada, cancelada, etc.) no cambian.
+    """
+    from .models import OrdenCompra
+
+    pago.fecha_realizada = on
+    pago.marcado_pagado_por = by
+
+    # Snapshot del TC al pagar si la moneda no es CRC (asume CRC↔USD por
+    # ahora; multi-moneda futura amplía aquí)
+    if pago.monto.currency.code != "CRC":
+        try:
+            fx = ExchangeRate.for_date(
+                pago.monto.currency.code, on, side="sell",
+            )
+            pago.fx_rate_applied = fx
+            pago.fx_rate_date = on
+        except (NoExchangeRateAvailable, Exception):
+            # Sin TC histórico: dejar None. El total_pagado en moneda mixta
+            # quedará subreportado para esta línea pero no falla
+            pass
+
+    pago.save()
+
+    # Lockear OC para serializar transiciones concurrentes y calcular
+    # total_pagado normalizado en la moneda de la OC
+    oc = OrdenCompra.objects.select_for_update().get(pk=pago.oc_id)
+
+    # Si la OC ya está en estado terminal, no transicionar
+    if oc.estado not in ("autorizada", "pagada_parcial"):
+        return pago
+
+    target_ccy = oc.monto_total.currency.code
+    total_pagado = Money(0, target_ccy)
+
+    for p in oc.pagos.filter(fecha_realizada__isnull=False):
+        monto = p.monto
+        if monto.currency.code != target_ccy:
+            try:
+                monto = convert(monto, target_ccy, p.fecha_realizada)
+            except (NoExchangeRateAvailable, Exception):
+                # Si no hay TC para ese día, ignorar este pago en la suma
+                # (mejor underreport que blocking)
+                continue
+        total_pagado += monto
+
+    if total_pagado >= oc.monto_total:
+        nuevo_estado = "pagada"
+    elif total_pagado.amount > 0:
+        nuevo_estado = "pagada_parcial"
+    else:
+        nuevo_estado = oc.estado
+
+    if nuevo_estado != oc.estado:
+        oc.estado = nuevo_estado
+        oc.save(update_fields=["estado"])
+
+    return pago
+
+
 def presupuesto_status(obra, categoria) -> dict | None:
     """Devuelve el estado del presupuesto para (obra, categoria).
 
