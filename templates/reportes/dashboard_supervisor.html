@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">Dashboard del supervisor</h1>
+
+<section class="mb-8">
+  <h2 class="text-xl font-semibold mb-3">Obras activas</h2>
+  <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+    {% for d in obras_data %}
+    <div class="bg-white p-4 rounded shadow border-l-4
+        {% if d.worst_semaforo == 'verde' %}border-green-500
+        {% elif d.worst_semaforo == 'amarillo' %}border-yellow-500
+        {% elif d.worst_semaforo == 'naranja' %}border-orange-500
+        {% else %}border-red-500{% endif %}">
+      <h3 class="font-bold">{{ d.obra.nombre }}</h3>
+      <p class="text-sm text-gray-500">{{ d.obra.cliente.nombre }} · {{ d.obra.get_estado_display }}</p>
+      {% if d.num_categorias > 0 %}
+      <p class="mt-2 text-sm">
+        Peor consumo presupuesto: <strong>{{ d.worst_pct|floatformat:1 }}%</strong>
+        <span class="inline-block px-2 py-0 text-xs rounded
+          {% if d.worst_semaforo == 'verde' %}bg-green-100 text-green-800
+          {% elif d.worst_semaforo == 'amarillo' %}bg-yellow-100 text-yellow-800
+          {% elif d.worst_semaforo == 'naranja' %}bg-orange-100 text-orange-800
+          {% else %}bg-red-100 text-red-800{% endif %}">{{ d.worst_semaforo }}</span>
+      </p>
+      {% else %}
+      <p class="mt-2 text-sm text-gray-500">Sin presupuesto definido</p>
+      {% endif %}
+    </div>
+    {% empty %}
+    <p class="text-gray-500">Sin obras activas.</p>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="mb-8">
+  <h2 class="text-xl font-semibold mb-3">Pendiente de mi acción</h2>
+  <div class="grid gap-4 md:grid-cols-2">
+
+    <div class="bg-white p-4 rounded shadow">
+      <h3 class="font-bold text-blue-700">
+        Cotizaciones por aprobar
+        <span class="inline-block px-2 py-0 text-xs rounded bg-yellow-100 text-yellow-800">{{ cotizaciones_pendientes|length }}</span>
+      </h3>
+      <ul class="mt-2 space-y-1 text-sm">
+        {% for c in cotizaciones_pendientes %}
+        <li>
+          <a href="{% url 'compras:cotizacion_detail' pk=c.pk %}" class="text-blue-600">
+            {{ c.numero_cotizacion }}
+          </a>
+          — {{ c.proveedor.nombre }} ({{ c.obra.nombre }}) — {{ c.total }}
+        </li>
+        {% empty %}
+        <li class="text-gray-500">Sin pendientes</li>
+        {% endfor %}
+      </ul>
+    </div>
+
+    <div class="bg-white p-4 rounded shadow">
+      <h3 class="font-bold text-blue-700">
+        Facturas por confirmar
+        <span class="inline-block px-2 py-0 text-xs rounded bg-yellow-100 text-yellow-800">{{ facturas_extracted|length }}</span>
+      </h3>
+      <ul class="mt-2 space-y-1 text-sm">
+        {% for f in facturas_extracted %}
+        <li>
+          <a href="{% url 'facturas:detail' pk=f.pk %}" class="text-blue-600">
+            Factura #{{ f.pk }}
+          </a>
+          — OC {{ f.oc.numero_oc }}
+        </li>
+        {% empty %}
+        <li class="text-gray-500">Sin pendientes</li>
+        {% endfor %}
+      </ul>
+    </div>
+
+    <div class="bg-white p-4 rounded shadow">
+      <h3 class="font-bold text-blue-700">
+        Pagos sin marcar realizados
+        <span class="inline-block px-2 py-0 text-xs rounded bg-yellow-100 text-yellow-800">{{ pagos_sin_marcar|length }}</span>
+      </h3>
+      <ul class="mt-2 space-y-1 text-sm">
+        {% for p in pagos_sin_marcar %}
+        <li>
+          {{ p.monto }} — OC <a href="{% url 'compras:oc_detail' pk=p.oc.pk %}" class="text-blue-600">{{ p.oc.numero_oc }}</a>
+          (prog. {{ p.fecha_programada }})
+        </li>
+        {% empty %}
+        <li class="text-gray-500">Sin pendientes</li>
+        {% endfor %}
+      </ul>
+    </div>
+
+    <div class="bg-white p-4 rounded shadow">
+      <h3 class="font-bold text-blue-700">
+        Items del catálogo pendientes
+        <span class="inline-block px-2 py-0 text-xs rounded bg-yellow-100 text-yellow-800">{{ items_pendientes|length }}</span>
+      </h3>
+      <ul class="mt-2 space-y-1 text-sm">
+        {% for i in items_pendientes %}
+        <li>{{ i.nombre_canonico }} ({{ i.get_unidad_display }})
+            {% if i.sugerido_por %}— sugerido por {{ i.sugerido_por.username }}{% endif %}
+        </li>
+        {% empty %}
+        <li class="text-gray-500">Sin pendientes</li>
+        {% endfor %}
+      </ul>
+    </div>
+
+  </div>
+</section>
+{% endblock %}

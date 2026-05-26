@@ -1,0 +1,92 @@
+"""Vistas de dashboards por rol + landing redirect."""
+from django.contrib.auth.decorators import login_required
+from django.core.exceptions import PermissionDenied
+from django.shortcuts import redirect, render
+
+from apps.core.models import Obra
+from apps.compras.models import Cotizacion, OrdenCompra, Pago
+from apps.facturas.models import Factura
+from apps.catalogo.models import ItemCatalogo
+from apps.compras.services import presupuesto_status
+
+
+def _user_is_supervisor(user):
+    return user.is_authenticated and user.groups.filter(name="supervisor").exists()
+
+
+def _user_is_operativo(user):
+    return user.is_authenticated and user.groups.filter(name="operativo").exists()
+
+
+def _user_is_lector(user):
+    return user.is_authenticated and user.groups.filter(name="lector").exists()
+
+
+@login_required
+def landing(request):
+    """Root URL — redirige al dashboard según rol del usuario."""
+    if _user_is_supervisor(request.user):
+        return redirect("reportes:dashboard_supervisor")
+    if _user_is_operativo(request.user):
+        return redirect("/dashboard/operativo/")
+    if _user_is_lector(request.user):
+        return redirect("/dashboard/lector/")
+    # Sin rol: redirect al admin (probablemente staff/superuser)
+    return redirect("/admin/")
+
+
+@login_required
+def dashboard_supervisor(request):
+    """Dashboard para supervisores (Diana, Gabriel)."""
+    if not _user_is_supervisor(request.user):
+        raise PermissionDenied
+
+    obras_activas = Obra.objects.filter(
+        estado__in=("planificada", "en_curso", "pausada"),
+    ).select_related("cliente").prefetch_related("categorias")
+
+    # Compute semáforo per obra (worst categoria)
+    obras_data = []
+    for obra in obras_activas:
+        worst_semaforo = "verde"
+        worst_pct = 0.0
+        total_categorias_con_presupuesto = 0
+        for cat in obra.categorias.all():
+            status = presupuesto_status(obra, cat)
+            if status is None:
+                continue
+            total_categorias_con_presupuesto += 1
+            if status["porcentaje"] > worst_pct:
+                worst_pct = status["porcentaje"]
+                worst_semaforo = status["semaforo"]
+        obras_data.append({
+            "obra": obra,
+            "worst_semaforo": worst_semaforo,
+            "worst_pct": worst_pct,
+            "num_categorias": total_categorias_con_presupuesto,
+        })
+
+    # Pendientes de acción del supervisor
+    cotizaciones_pendientes = Cotizacion.objects.filter(
+        estado__in=("recibida", "en_revision"),
+    ).select_related("proveedor", "obra").order_by("-fecha")[:10]
+
+    facturas_extracted = Factura.objects.filter(
+        status="extracted",
+    ).select_related("oc").order_by("-created_at")[:10]
+
+    pagos_sin_marcar = Pago.objects.filter(
+        fecha_realizada__isnull=True,
+    ).select_related("oc").order_by("fecha_programada")[:10]
+
+    items_pendientes_aprobacion = ItemCatalogo.objects.filter(
+        estado="pendiente",
+    ).order_by("-created_at")[:10]
+
+    return render(request, "reportes/dashboard_supervisor.html", {
+        "obras_data": obras_data,
+        "cotizaciones_pendientes": cotizaciones_pendientes,
+        "facturas_extracted": facturas_extracted,
+        "pagos_sin_marcar": pagos_sin_marcar,
+        "items_pendientes": items_pendientes_aprobacion,
+    })
