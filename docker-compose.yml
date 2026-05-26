@@ -31,6 +31,16 @@ services:
     command: docker/web.entrypoint.sh
     env_file: .env
     volumes:
+      # Bind mounts del código fuente para que cambios en host se vean
+      # inmediatamente y migraciones generadas dentro del container persistan
+      # al host. En producción se respeta el mismo pattern (el código vive
+      # en el host vía git pull).
+      - ./apps:/app/apps
+      - ./construmaster:/app/construmaster
+      - ./manage.py:/app/manage.py
+      - ./src:/app/src
+      - ./templates:/app/templates
+      - ./docker:/app/docker
       - mediadata:/var/data/files
       - staticdata:/app/staticfiles
     depends_on:
@@ -46,6 +56,10 @@ services:
     command: docker/worker.entrypoint.sh
     env_file: .env
     volumes:
+      - ./apps:/app/apps
+      - ./construmaster:/app/construmaster
+      - ./manage.py:/app/manage.py
+      - ./docker:/app/docker
       - mediadata:/var/data/files
     depends_on:
       postgres:
