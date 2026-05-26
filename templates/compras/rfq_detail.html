@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-2">{{ rfq }}</h1>
+<p class="text-sm text-gray-600">
+  Obra: {{ rfq.obra.nombre }} ·
+  Categoría: {{ rfq.categoria.nombre }} ·
+  Estado: {{ rfq.get_estado_display }}
+  {% if rfq.es_especial %} · <span class="badge-orange">Pedido especial</span>{% endif %}
+</p>
+<p class="my-3">{{ rfq.descripcion|linebreaks }}</p>
+<div class="mt-4 flex gap-3">
+  <a href="{% url 'compras:cotizacion_from_rfq' rfq_pk=rfq.pk %}" class="btn-primary">
+    + Capturar cotización recibida
+  </a>
+  {% if rfq.cotizaciones.exists %}
+  <a href="{% url 'compras:comparativa' rfq_pk=rfq.pk %}" class="btn-secondary">
+    Ver comparativa
+  </a>
+  {% endif %}
+</div>
+<h2 class="text-xl font-semibold mt-6 mb-2">
+  Cotizaciones recibidas ({{ rfq.cotizaciones.count }})
+</h2>
+<ul class="space-y-2">
+  {% for c in rfq.cotizaciones.all %}
+  <li class="bg-white p-3 rounded shadow flex justify-between">
+    <span>
+      <a href="{% url 'compras:cotizacion_detail' pk=c.pk %}" class="text-blue-600">
+        {{ c.proveedor.nombre }} — {{ c.numero_cotizacion }}
+      </a>
+    </span>
+    <span>
+      {{ c.total }} ·
+      <span class="badge-{% if c.estado == 'aprobada' %}green{% elif c.estado == 'rechazada' %}red{% else %}yellow{% endif %}">
+        {{ c.get_estado_display }}
+      </span>
+    </span>
+  </li>
+  {% empty %}
+  <li class="text-gray-500">Aún no hay cotizaciones capturadas.</li>
+  {% endfor %}
+</ul>
+{% endblock %}

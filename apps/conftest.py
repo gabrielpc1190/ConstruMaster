@@ -19,10 +19,13 @@ def setup_groups_permissions(django_db_setup, django_db_blocker):
         from django.contrib.auth.models import Group, Permission
         from django.contrib.contenttypes.models import ContentType
 
-        LOCAL_APPS = ["core", "catalogo"]
+        LOCAL_APPS = ["core", "catalogo", "compras"]
         ITEMCATALOGO_CUSTOM_PERMISSIONS = [
             ("suggest_item", "Puede sugerir items al catálogo"),
             ("approve_item", "Puede aprobar/fusionar items del catálogo"),
+        ]
+        COMPRAS_CUSTOM_PERMISSIONS = [
+            ("approve_cotizacion", "Puede aprobar Cotizacion → crear OrdenCompra"),
         ]
         STANDARD_ACTIONS = [
             ("add", "Can add"),
@@ -48,6 +51,18 @@ def setup_groups_permissions(django_db_setup, django_db_blocker):
             for codename, name in ITEMCATALOGO_CUSTOM_PERMISSIONS:
                 Permission.objects.get_or_create(
                     content_type=item_ct,
+                    codename=codename,
+                    defaults={"name": name},
+                )
+        except ContentType.DoesNotExist:
+            pass
+
+        # Crear custom permissions de Cotizacion
+        try:
+            cot_ct = ContentType.objects.get(app_label="compras", model="cotizacion")
+            for codename, name in COMPRAS_CUSTOM_PERMISSIONS:
+                Permission.objects.get_or_create(
+                    content_type=cot_ct,
                     codename=codename,
                     defaults={"name": name},
                 )
@@ -85,6 +100,17 @@ def setup_groups_permissions(django_db_setup, django_db_blocker):
                     operativo.permissions.add(p)
         except ContentType.DoesNotExist:
             pass
+
+        # Operativo: add/change SolicitudCotizacion + Cotizacion
+        for model in ("solicitudcotizacion", "cotizacion"):
+            try:
+                ct = ContentType.objects.get(app_label="compras", model=model)
+                for codename in (f"add_{model}", f"change_{model}"):
+                    p = Permission.objects.filter(content_type=ct, codename=codename).first()
+                    if p:
+                        operativo.permissions.add(p)
+            except ContentType.DoesNotExist:
+                pass
 
         # suggest_item: operativo
         suggest = Permission.objects.filter(codename="suggest_item").first()

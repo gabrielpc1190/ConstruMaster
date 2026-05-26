@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% load money_extras %}
+{% block content %}
+<h1 class="text-2xl font-bold">{{ cotizacion.numero_cotizacion }}</h1>
+<p>Proveedor: <strong>{{ cotizacion.proveedor.nombre }}</strong></p>
+<p>Total: {% money_display cotizacion.total cotizacion.obra.moneda_reporte cotizacion.fecha %}</p>
+<p>Estado: <span class="badge-yellow">{{ cotizacion.get_estado_display }}</span></p>
+{% if cotizacion.es_especial %}<p><span class="badge-orange">Pedido especial</span></p>{% endif %}
+
+<h2 class="text-xl font-semibold mt-4">Items</h2>
+<table class="w-full text-sm bg-white shadow rounded">
+  <thead><tr class="border-b">
+    <th>Descripción</th><th>Cantidad</th><th>Unidad</th>
+    <th>P. unit.</th><th>Subtotal</th><th>IVA</th>
+  </tr></thead>
+  <tbody>
+  {% for item in cotizacion.items.all %}
+  <tr>
+    <td>{{ item.descripcion }}</td>
+    <td>{{ item.cantidad }}</td>
+    <td>{{ item.unidad }}</td>
+    <td>{{ item.precio_unitario }}</td>
+    <td>{{ item.subtotal }}</td>
+    <td>{{ item.iva_monto }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

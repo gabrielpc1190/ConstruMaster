@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% load money_extras %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-3">Comparativa: {{ rfq }}</h1>
+{% if cotizaciones %}
+<div class="grid gap-4" style="grid-template-columns: repeat({{ cotizaciones|length }}, 1fr);">
+{% for c in cotizaciones %}
+<div class="bg-white p-4 rounded shadow">
+  <h3 class="font-bold">{{ c.proveedor.nombre }}</h3>
+  <p class="text-sm text-gray-500">{{ c.numero_cotizacion }} · {{ c.fecha }}</p>
+  <p class="my-2 text-lg">{% money_display c.total c.obra.moneda_reporte c.fecha %}</p>
+  <p class="text-sm">
+    Entrega: {{ c.plazo_entrega_dias|default:"—" }} días ·
+    Anticipo: {{ c.pct_anticipo|default:"—" }}%
+  </p>
+  <ul class="mt-3 text-xs space-y-1">
+    {% for item in c.items.all %}
+    <li>{{ item.descripcion }} — {{ item.cantidad }} {{ item.unidad }} × {{ item.precio_unitario }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endfor %}
+</div>
+{% else %}
+<p class="text-gray-500">No hay cotizaciones para comparar todavía.</p>
+{% endif %}
+{% endblock %}

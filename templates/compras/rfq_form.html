@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-4">Nueva solicitud de cotización (RFQ)</h1>
+<form method="post" class="space-y-3 bg-white p-4 rounded shadow max-w-2xl">
+  {% csrf_token %}
+  {{ form.as_p }}
+  <button type="submit" class="btn-primary">Crear RFQ</button>
+</form>
+{% endblock %}
