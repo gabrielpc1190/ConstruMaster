@@ -159,3 +159,6 @@ Documentadas en spec con explicación inline. Los más críticos para ejecución
   - Issue raised in code quality review of commit `280963c`.
 - **Hadolint DL3008:** versiones de paquetes apt sin pinnear en Dockerfile. Aceptable hoy porque python:3.13-slim usa Debian Bookworm con versiones estables.
 - **Worker sin `USER` no-root.** Mejora de seguridad para iteraciones futuras.
+- **AVX2 dependency en VM actual.** La VM corre sin AVX2 (verificado: `grep avx2 /proc/cpuinfo` vacío). Por eso el Dockerfile usa Node.js + `@tailwindcss/cli` npm en lugar del binario standalone de Tailwind v4 (que requiere AVX2). En hardware con AVX2, se puede quitar el bloque `nodejs npm` del Dockerfile y setear `TAILWIND_CLI_USE_SYSTEM_BINARY = False` en settings. Saving aprox 200 MB de imagen.
+- **`admin:logout` en `templates/base.html`.** El template base apunta el botón Salir a la URL de logout del admin de Django (`{% url 'admin:logout' %}`). Aceptable mientras solo se use admin para auth; cuando se agreguen vistas de autenticación propias (allauth o equivalente), migrar a `accounts:logout` o equivalente.
+- **`TAILWIND_CLI_VERSION` debe mantenerse sincronizado con npm pin.** Si se bumpa Tailwind, actualizar AMBOS: la línea `npm install -g @tailwindcss/cli@X.Y.Z tailwindcss@X.Y.Z` en `Dockerfile` Y `TAILWIND_CLI_VERSION = "X.Y.Z"` en `construmaster/settings.py`.

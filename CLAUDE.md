@@ -57,7 +57,8 @@ Landing page de Claude Code cuando trabaja en `/mnt/NAS/ConstruMaster/`. Mantene
 | `construmaster/` | Django project (settings, urls, wsgi, asgi) |
 | `docker/` | Entrypoints `web.entrypoint.sh`, `worker.entrypoint.sh`, `backup.sh` |
 | `templates/` | Base + parciales HTMX |
-| `static/css/` | `input.css` para Tailwind v4 (compilado a `tailwind.css`) |
+| `src/css/` | Fuente Tailwind v4 (`input.css`). Fuera de `STATICFILES_DIRS` para evitar conflicto con whitenoise ManifestStaticFilesStorage |
+| `static/css/` | Output compilado (`tailwind.css`). Generado por entrypoint en cada arranque (no commiteado, gitignored) |
 | `docs/` | Esta documentación |
 | `Dockerfile`, `docker-compose.yml`, `pyproject.toml`, `manage.py` | Raíz |
 

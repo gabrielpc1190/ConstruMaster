@@ -20,7 +20,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install Tailwind CSS CLI via npm (fallback cuando el binario standalone requiere AVX2)
 # tailwindcss se instala global para que el CLI lo resuelva vía NODE_PATH o node_modules global
-RUN npm install -g @tailwindcss/cli@^4.0.0 tailwindcss@^4.0.0
+RUN npm install -g @tailwindcss/cli@4.3.0 tailwindcss@4.3.0 \
+    && npm cache clean --force
 
 WORKDIR /app
 
