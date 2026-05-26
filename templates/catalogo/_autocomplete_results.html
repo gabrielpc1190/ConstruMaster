@@ -1,0 +1,25 @@
+{% if items %}
+<ul class="bg-white border border-gray-200 rounded shadow max-h-64 overflow-y-auto">
+  {% for item in items %}
+  <li>
+    <button type="button"
+            class="w-full text-left px-3 py-2 hover:bg-blue-50"
+            data-id="{{ item.pk }}"
+            data-nombre="{{ item.nombre_canonico }}"
+            data-unidad="{{ item.unidad }}"
+            onclick="window.dispatchEvent(new CustomEvent('item-selected', {detail: {id: {{ item.pk }}, nombre: '{{ item.nombre_canonico|escapejs }}', unidad: '{{ item.unidad }}'}}))">
+      <span class="font-medium">{{ item.nombre_canonico }}</span>
+      <span class="text-sm text-gray-500">({{ item.get_unidad_display }})</span>
+    </button>
+  </li>
+  {% endfor %}
+</ul>
+{% elif q %}
+<div class="bg-yellow-50 border border-yellow-200 rounded p-3 text-sm">
+  No hay match para "{{ q }}".
+  <button type="button" class="text-blue-600 underline ml-2"
+          onclick="window.dispatchEvent(new CustomEvent('suggest-new-item', {detail: {q: '{{ q|escapejs }}'}}))">
+    + Sugerir nuevo item
+  </button>
+</div>
+{% endif %}
