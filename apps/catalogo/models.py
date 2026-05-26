@@ -85,6 +85,10 @@ class ItemCatalogo(TimestampedModel):
             models.Index(fields=["tipo"]),
             models.Index(fields=["slug"]),
         ]
+        permissions = [
+            ("suggest_item", "Puede sugerir items al catálogo"),
+            ("approve_item", "Puede aprobar/fusionar items del catálogo"),
+        ]
 
     def save(self, *args, **kwargs):
         if not self.slug:
