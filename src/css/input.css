@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+/* Custom utilities for ConstruMaster */
+@layer components {
+  .btn-primary {
+    @apply px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700;
+  }
+  .btn-secondary {
+    @apply px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300;
+  }
+  .badge-green { @apply bg-green-100 text-green-800 px-2 py-1 rounded text-xs; }
+  .badge-yellow { @apply bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-xs; }
+  .badge-orange { @apply bg-orange-100 text-orange-800 px-2 py-1 rounded text-xs; }
+  .badge-red { @apply bg-red-100 text-red-800 px-2 py-1 rounded text-xs; }
+}

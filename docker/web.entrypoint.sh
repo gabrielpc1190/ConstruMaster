@@ -2,6 +2,7 @@
 set -e
 
 python manage.py migrate --noinput
+python manage.py tailwind build
 python manage.py collectstatic --noinput
 
 exec gunicorn construmaster.wsgi:application \

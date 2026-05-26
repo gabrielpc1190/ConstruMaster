@@ -18,6 +18,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "django_tailwind_cli",
     "django_htmx",
     "django_q",
     "djmoney",
@@ -148,3 +149,14 @@ LOGGING = {
         "construmaster": {"handlers": ["console"], "level": "DEBUG" if DEBUG else "INFO"},
     },
 }
+
+# Tailwind CSS v4 (vía django-tailwind-cli)
+# SRC_CSS es relativo a BASE_DIR; ponerlo fuera de static/ para que whitenoise no lo procese
+# NOTA: El binario standalone de Tailwind v4 requiere AVX2 (Bun-based). Esta VM QEMU no tiene
+# AVX2, así que usamos TAILWIND_CLI_USE_SYSTEM_BINARY=True con @tailwindcss/cli npm instalado
+# en la imagen Docker. Funcionalmente idéntico; el CLI npm es Node.js puro sin requisito de AVX.
+TAILWIND_CLI_VERSION = "4.3.0"
+TAILWIND_CLI_SRC_CSS = "src/css/input.css"
+TAILWIND_CLI_DIST_CSS = "css/tailwind.css"
+TAILWIND_CLI_USE_SYSTEM_BINARY = True
+TAILWIND_CLI_SYSTEM_BINARY_NAME = "tailwindcss"

@@ -1,0 +1,32 @@
+{% load tailwind_cli %}
+<!DOCTYPE html>
+<html lang="es-cr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}ConstruMaster{% endblock %}</title>
+  {% tailwind_css %}
+  <script src="https://unpkg.com/htmx.org@2.0.9" defer></script>
+</head>
+<body class="bg-gray-50 text-gray-900 min-h-screen">
+  <nav class="bg-white shadow px-4 py-3 flex justify-between items-center">
+    <a href="/" class="font-bold text-lg">ConstruMaster</a>
+    {% if user.is_authenticated %}
+      <div class="flex gap-3 items-center text-sm">
+        <span>{{ user.get_full_name|default:user.username }}</span>
+        <form method="post" action="{% url 'admin:logout' %}">{% csrf_token %}
+          <button type="submit" class="text-blue-600">Salir</button>
+        </form>
+      </div>
+    {% endif %}
+  </nav>
+  <main class="max-w-7xl mx-auto px-4 py-6">
+    {% if messages %}
+      {% for m in messages %}
+        <div class="mb-3 p-3 rounded {% if m.tags == 'error' %}bg-red-100{% else %}bg-blue-100{% endif %}">{{ m }}</div>
+      {% endfor %}
+    {% endif %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>
