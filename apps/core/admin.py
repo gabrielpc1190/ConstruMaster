@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Cliente, Obra, CategoriaPresupuesto, Presupuesto
+from .models import Bodega, Cliente, Obra, CategoriaPresupuesto, Presupuesto
 
 
 @admin.register(Cliente)
@@ -28,3 +28,10 @@ class CategoriaPresupuestoAdmin(admin.ModelAdmin):
 class PresupuestoAdmin(admin.ModelAdmin):
     list_display = ("categoria", "obra", "monto")
     list_filter = ("obra",)
+
+
+@admin.register(Bodega)
+class BodegaAdmin(admin.ModelAdmin):
+    list_display = ("nombre", "cliente", "responsable", "activo")
+    list_filter = ("cliente", "activo")
+    search_fields = ("nombre",)

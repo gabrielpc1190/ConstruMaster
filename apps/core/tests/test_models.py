@@ -82,3 +82,38 @@ def test_presupuesto_unique_per_obra_categoria():
     Presupuesto.objects.create(obra=o, categoria=cat, monto=Money(1, "CRC"))
     with pytest.raises(IntegrityError):
         Presupuesto.objects.create(obra=o, categoria=cat, monto=Money(2, "CRC"))
+
+
+def test_bodega_pertenece_a_cliente():
+    from apps.core.models import Cliente, Bodega
+    c = Cliente.objects.create(nombre="Nicholas", identificacion="A-1")
+    b = Bodega.objects.create(cliente=c, nombre="Cuarto Eléctrico GADI")
+    assert b.cliente == c
+    assert b.activo is True
+    assert str(b) == "Cuarto Eléctrico GADI (Nicholas)"
+
+
+def test_bodega_unique_per_cliente():
+    from apps.core.models import Cliente, Bodega
+    from django.db import IntegrityError
+    c = Cliente.objects.create(nombre="N", identificacion="X")
+    Bodega.objects.create(cliente=c, nombre="B1")
+    with pytest.raises(IntegrityError):
+        Bodega.objects.create(cliente=c, nombre="B1")
+
+
+def test_bodega_responsable_optional():
+    from apps.core.models import Cliente, Bodega
+    c = Cliente.objects.create(nombre="N", identificacion="X")
+    b = Bodega.objects.create(cliente=c, nombre="B1")
+    assert b.responsable is None  # responsable es nullable
+
+
+def test_bodega_protege_cliente_de_borrado():
+    """No se puede borrar Cliente que tiene Bodegas (PROTECT)."""
+    from apps.core.models import Cliente, Bodega
+    from django.db.models import ProtectedError
+    c = Cliente.objects.create(nombre="N", identificacion="X")
+    Bodega.objects.create(cliente=c, nombre="B1")
+    with pytest.raises(ProtectedError):
+        c.delete()

@@ -1,3 +1,4 @@
+from django.contrib.auth import get_user_model
 from django.db import models
 from django.utils.text import slugify
 from djmoney.models.fields import MoneyField
@@ -97,3 +98,27 @@ class Presupuesto(TimestampedModel):
 
     def __str__(self):
         return f"{self.categoria.nombre}: {self.monto}"
+
+
+class Bodega(TimestampedModel):
+    cliente = models.ForeignKey(Cliente, on_delete=models.PROTECT, related_name="bodegas")
+    nombre = models.CharField(max_length=120)
+    direccion = models.TextField(blank=True)
+    responsable = models.ForeignKey(
+        get_user_model(),
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="bodegas_responsable",
+    )
+    activo = models.BooleanField(default=True)
+    notas = models.TextField(blank=True)
+
+    class Meta:
+        verbose_name = "Bodega"
+        verbose_name_plural = "Bodegas"
+        ordering = ["cliente", "nombre"]
+        unique_together = [("cliente", "nombre")]
+
+    def __str__(self):
+        return f"{self.nombre} ({self.cliente.nombre})"
