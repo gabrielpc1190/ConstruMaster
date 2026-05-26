@@ -127,7 +127,7 @@ CURRENCY_CHOICES = [("CRC", "Colones (₡)"), ("USD", "Dólares ($)")]
 DEFAULT_CURRENCY = "CRC"
 
 # Custom settings (used by apps)
-OCR_MODEL = "gemini-3.1-flash-lite"  # fallback documentado: gemini-2.5-flash-lite
+OCR_MODEL = env("OCR_MODEL", default="gemini-3.1-flash-lite")  # override via env; fallback stable: gemini-2.5-flash-lite
 GEMINI_API_KEY = env("GEMINI_API_KEY", default="")
 BCCR_EMAIL = env("BCCR_EMAIL", default="")
 BCCR_TOKEN = env("BCCR_TOKEN", default="")
