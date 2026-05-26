@@ -8,6 +8,15 @@ class ComprasConfig(AppConfig):
 
     def ready(self):
         from auditlog.registry import auditlog
-        from .models import SolicitudCotizacion, Cotizacion
+        from .models import (
+            SolicitudCotizacion,
+            Cotizacion,
+            OrdenCompra,
+            OrdenCompraItem,
+            Hito,
+        )
         auditlog.register(SolicitudCotizacion)
         auditlog.register(Cotizacion)
+        auditlog.register(OrdenCompra)
+        auditlog.register(OrdenCompraItem)
+        auditlog.register(Hito)

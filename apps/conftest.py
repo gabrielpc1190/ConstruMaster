@@ -24,9 +24,7 @@ def setup_groups_permissions(django_db_setup, django_db_blocker):
             ("suggest_item", "Puede sugerir items al catálogo"),
             ("approve_item", "Puede aprobar/fusionar items del catálogo"),
         ]
-        COMPRAS_CUSTOM_PERMISSIONS = [
-            ("approve_cotizacion", "Puede aprobar Cotizacion → crear OrdenCompra"),
-        ]
+
         STANDARD_ACTIONS = [
             ("add", "Can add"),
             ("change", "Can change"),
@@ -60,12 +58,22 @@ def setup_groups_permissions(django_db_setup, django_db_blocker):
         # Crear custom permissions de Cotizacion
         try:
             cot_ct = ContentType.objects.get(app_label="compras", model="cotizacion")
-            for codename, name in COMPRAS_CUSTOM_PERMISSIONS:
-                Permission.objects.get_or_create(
-                    content_type=cot_ct,
-                    codename=codename,
-                    defaults={"name": name},
-                )
+            Permission.objects.get_or_create(
+                content_type=cot_ct,
+                codename="approve_cotizacion",
+                defaults={"name": "Puede aprobar Cotizacion → crear OrdenCompra"},
+            )
+        except ContentType.DoesNotExist:
+            pass
+
+        # Crear custom permission cancel_oc en OrdenCompra
+        try:
+            oc_ct = ContentType.objects.get(app_label="compras", model="ordencompra")
+            Permission.objects.get_or_create(
+                content_type=oc_ct,
+                codename="cancel_oc",
+                defaults={"name": "Puede cancelar/anular una OrdenCompra autorizada"},
+            )
         except ContentType.DoesNotExist:
             pass
 
