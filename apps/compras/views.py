@@ -1,15 +1,20 @@
-"""Views del módulo compras: RFQ, Cotización, comparativa."""
+"""Views del módulo compras: RFQ, Cotización, comparativa, aprobación."""
+from datetime import date as date_type
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
 from django.db import transaction
 from django.shortcuts import get_object_or_404, redirect, render
+
+from apps.core.models import CategoriaPresupuesto
 
 from .forms import (
     SolicitudCotizacionForm,
     CotizacionForm,
     CotizacionItemFormSet,
 )
-from .models import SolicitudCotizacion, Cotizacion
+from .models import SolicitudCotizacion, Cotizacion, OrdenCompra
+from .services import approve_cotizacion, presupuesto_status, AlreadyApproved
 
 
 @login_required
@@ -86,3 +91,47 @@ def comparativa(request, rfq_pk):
     )
     return render(request, "compras/comparativa.html",
                   {"rfq": rfq, "cotizaciones": cotizaciones})
+
+
+@login_required
+@permission_required("compras.approve_cotizacion", raise_exception=True)
+def cotizacion_approve(request, pk):
+    """Vista de aprobación de cotización con semáforo de presupuesto (spec §6.4)."""
+    cot = get_object_or_404(Cotizacion, pk=pk)
+
+    if request.method == "GET":
+        categoria_id = request.GET.get("categoria") or (
+            cot.rfq.categoria_id if cot.rfq else None
+        )
+        categoria = None
+        status = None
+        if categoria_id:
+            categoria = get_object_or_404(CategoriaPresupuesto, pk=categoria_id)
+            status = presupuesto_status(cot.obra, categoria)
+        return render(request, "compras/cotizacion_approve.html", {
+            "cotizacion": cot, "categoria": categoria, "status": status,
+        })
+
+    # POST = aprobar
+    categoria = get_object_or_404(
+        CategoriaPresupuesto, pk=request.POST.get("categoria")
+    )
+    try:
+        oc = approve_cotizacion(
+            cot, categoria=categoria, approver=request.user,
+            fecha_aprobacion=date_type.today(),
+        )
+    except AlreadyApproved as e:
+        messages.error(request, str(e))
+        return redirect("compras:cotizacion_detail", pk=cot.pk)
+
+    messages.success(request, f"Cotización aprobada → {oc.numero_oc}")
+    return redirect("compras:oc_detail", pk=oc.pk)
+
+
+@login_required
+@permission_required("compras.view_ordencompra", raise_exception=True)
+def oc_detail(request, pk):
+    """Detalle de una OrdenCompra con items snapshot y hitos."""
+    oc = get_object_or_404(OrdenCompra, pk=pk)
+    return render(request, "compras/oc_detail.html", {"oc": oc})

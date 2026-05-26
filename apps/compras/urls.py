@@ -11,4 +11,6 @@ urlpatterns = [
     path("cotizacion/new/", views.cotizacion_create, name="cotizacion_create"),
     path("cotizacion/new/<int:rfq_pk>/", views.cotizacion_create, name="cotizacion_from_rfq"),
     path("cotizacion/<int:pk>/", views.cotizacion_detail, name="cotizacion_detail"),
+    path("cotizacion/<int:pk>/approve/", views.cotizacion_approve, name="cotizacion_approve"),
+    path("oc/<int:pk>/", views.oc_detail, name="oc_detail"),
 ]

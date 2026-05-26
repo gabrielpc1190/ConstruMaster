@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% load money_extras %}
+{% block content %}
+<h1 class="text-2xl font-bold">{{ oc.numero_oc }}</h1>
+<p>Obra: {{ oc.obra.nombre }} · Categoría: {{ oc.categoria.nombre }}</p>
+<p>Proveedor: {{ oc.proveedor.nombre }}</p>
+<p>Monto: {% money_display oc.monto_total oc.obra.moneda_reporte oc.fecha_aprobacion %}</p>
+<p>Estado:
+  <span class="badge-{% if oc.estado == 'completada' %}green{% elif oc.estado == 'cancelada' %}red{% else %}yellow{% endif %}">
+    {{ oc.get_estado_display }}
+  </span>
+  {% if oc.es_especial %} · <span class="badge-orange">Pedido especial</span>{% endif %}
+</p>
+{% if oc.aprobada_por %}<p>Aprobada por: {{ oc.aprobada_por }}</p>{% endif %}
+{% if oc.fx_rate_applied %}
+<p class="text-sm text-gray-600">TC aplicado: ₡{{ oc.fx_rate_applied|floatformat:2 }} del {{ oc.fx_rate_date }}</p>
+{% endif %}
+
+<h2 class="text-xl font-semibold mt-4">Items</h2>
+<table class="w-full bg-white shadow rounded text-sm">
+  <thead><tr class="border-b">
+    <th class="text-left p-2">Material</th>
+    <th class="text-right p-2">Cantidad</th>
+    <th class="text-left p-2">Unidad</th>
+    <th class="text-right p-2">P. unit.</th>
+    <th class="text-right p-2">Subtotal</th>
+    <th class="text-left p-2">Hitos</th>
+  </tr></thead>
+  <tbody>
+  {% for item in oc.items.all %}
+  <tr>
+    <td class="p-2">{{ item.material_nombre_snapshot|default:item.descripcion }}</td>
+    <td class="text-right p-2">{{ item.cantidad }}</td>
+    <td class="p-2">{{ item.material_unidad_snapshot|default:item.unidad }}</td>
+    <td class="text-right p-2">{{ item.precio_unitario }}</td>
+    <td class="text-right p-2">{{ item.subtotal }}</td>
+    <td class="p-2 text-xs">
+      {% for h in item.hitos.all %}<div>{% if h.completado %}&#10003;{% else %}&#9675;{% endif %} {{ h.nombre }}</div>{% empty %}—{% endfor %}
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% if oc.cotizacion_origen %}
+<p class="mt-4 text-sm text-gray-500">
+  Cotización origen: <a href="{% url 'compras:cotizacion_detail' pk=oc.cotizacion_origen.pk %}" class="text-blue-600">{{ oc.cotizacion_origen.numero_cotizacion }}</a>
+</p>
+{% endif %}
+{% endblock %}
