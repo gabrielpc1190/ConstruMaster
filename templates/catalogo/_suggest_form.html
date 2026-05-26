@@ -1,0 +1,29 @@
+<form hx-post="{% url 'catalogo:suggest' %}" hx-target="this" hx-swap="outerHTML"
+      class="space-y-3 p-4 border rounded bg-white max-w-md">
+  {% csrf_token %}
+  <h3 class="font-semibold text-lg">Sugerir nuevo item al catálogo</h3>
+  {% if form.non_field_errors %}
+    <div class="bg-red-50 text-red-700 p-2 rounded">{{ form.non_field_errors }}</div>
+  {% endif %}
+  <div>
+    <label class="block text-sm mb-1">Tipo</label>
+    {{ form.tipo }}
+    {% if form.tipo.errors %}<p class="text-red-600 text-sm">{{ form.tipo.errors }}</p>{% endif %}
+  </div>
+  <div>
+    <label class="block text-sm mb-1">Nombre canónico</label>
+    {{ form.nombre_canonico }}
+    {% if form.nombre_canonico.errors %}<p class="text-red-600 text-sm">{{ form.nombre_canonico.errors }}</p>{% endif %}
+  </div>
+  <div>
+    <label class="block text-sm mb-1">Unidad</label>
+    {{ form.unidad }}
+    {% if form.unidad.errors %}<p class="text-red-600 text-sm">{{ form.unidad.errors }}</p>{% endif %}
+  </div>
+  <div>
+    <label class="block text-sm mb-1">Categoría sugerida (opcional)</label>
+    {{ form.categoria_sugerida }}
+  </div>
+  <button type="submit" class="btn-primary">Sugerir</button>
+  <p class="text-xs text-gray-500">Quedará pendiente de aprobación por un supervisor.</p>
+</form>

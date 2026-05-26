@@ -67,3 +67,58 @@ def test_autocomplete_searches_alias(client):
     resp = client.get("/catalogo/autocomplete/?q=san")
     body = resp.content.decode()
     assert "Cemento Sansón" in body
+
+
+def test_suggest_item_creates_pendiente(client):
+    from apps.catalogo.models import ItemCatalogo
+    u = _login_as(client, "operativo")
+    resp = client.post("/catalogo/suggest/", {
+        "tipo": "material",
+        "nombre_canonico": "Cemento Cemex 50kg",
+        "unidad": "saco",
+    })
+    assert resp.status_code == 200
+    item = ItemCatalogo.objects.get(nombre_canonico="Cemento Cemex 50kg")
+    assert item.estado == "pendiente"
+    assert item.sugerido_por == u
+
+
+def test_suggest_item_requires_permission(client):
+    """Lector NO tiene suggest_item."""
+    _login_as(client, "lector")
+    resp = client.post("/catalogo/suggest/", {
+        "tipo": "material", "nombre_canonico": "X", "unidad": "saco",
+    })
+    assert resp.status_code == 403
+
+
+def test_suggest_item_supervisor_can_also_suggest(client):
+    """Supervisor también puede sugerir items."""
+    from apps.catalogo.models import ItemCatalogo
+    _login_as(client, "supervisor")
+    resp = client.post("/catalogo/suggest/", {
+        "tipo": "servicio",
+        "nombre_canonico": "Consultoría eléctrica",
+        "unidad": "hora",
+    })
+    assert resp.status_code == 200
+    assert ItemCatalogo.objects.filter(nombre_canonico="Consultoría eléctrica").exists()
+
+
+def test_suggest_item_get_renders_form(client):
+    """GET muestra el form sin crear nada."""
+    _login_as(client, "operativo")
+    resp = client.get("/catalogo/suggest/")
+    assert resp.status_code == 200
+    assert "form" in resp.content.decode().lower() or "name=" in resp.content.decode()
+
+
+def test_suggest_item_invalid_data_returns_400(client):
+    """Form inválido devuelve status 400 con el form re-renderizado."""
+    _login_as(client, "operativo")
+    resp = client.post("/catalogo/suggest/", {
+        "tipo": "invalid_tipo",  # no es material/servicio
+        "nombre_canonico": "",  # required
+        "unidad": "saco",
+    })
+    assert resp.status_code == 400
