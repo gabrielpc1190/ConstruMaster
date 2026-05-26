@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="text-2xl font-bold">Entrega #{{ entrega.pk }}</h1>
+<p>OC: <a href="{% url 'compras:oc_detail' pk=entrega.oc.pk %}" class="text-blue-600">{{ entrega.oc.numero_oc }}</a></p>
+<p>Fecha: {{ entrega.fecha }}</p>
+<p>Recibido por: {{ entrega.recibido_por }}</p>
+{% if entrega.bodega_destino %}<p>Bodega: {{ entrega.bodega_destino.nombre }}</p>{% endif %}
+<p>Estado: {% if entrega.completa %}<span class="badge-green">Cierra OC</span>{% else %}<span class="badge-yellow">Parcial</span>{% endif %}</p>
+{% if entrega.notas %}<p class="mt-2">{{ entrega.notas|linebreaks }}</p>{% endif %}
+
+<h2 class="text-xl font-semibold mt-4">Items entregados</h2>
+<table class="w-full bg-white shadow rounded text-sm">
+  <thead><tr class="border-b"><th>Descripción</th><th>Cantidad</th><th>Unidad</th><th>OC Item</th></tr></thead>
+  <tbody>
+  {% for i in entrega.items.all %}
+  <tr>
+    <td>{{ i.descripcion }}</td>
+    <td>{{ i.cantidad }}</td>
+    <td>{{ i.unidad }}</td>
+    <td>{% if i.oc_item %}{{ i.oc_item.descripcion|truncatechars:40 }}{% else %}<em>sin link</em>{% endif %}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="4" class="text-gray-500 p-2">Sin items.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% if entrega.fotos.exists %}
+<h2 class="text-xl font-semibold mt-4">Fotos de evidencia</h2>
+<div class="grid grid-cols-3 gap-3 mt-2">
+  {% for foto in entrega.fotos.all %}
+  <div><img src="{{ foto.archivo.url }}" alt="evidencia" class="w-full rounded"></div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}
