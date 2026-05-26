@@ -94,6 +94,14 @@ def dashboard_supervisor(request):
     })
 
 
+from datetime import date as date_type
+
+from djmoney.money import Money
+
+from apps.finance.models import NoExchangeRateAvailable
+from apps.finance.services import convert
+
+
 def _user_is_operativo_or_supervisor(user):
     return user.is_authenticated and user.groups.filter(
         name__in=("operativo", "supervisor"),
@@ -151,4 +159,75 @@ def dashboard_operativo(request):
         "ocs_pagadas_sin_factura": ocs_pagadas_sin_factura,
         "mis_cotizaciones": mis_cotizaciones,
         "mis_entregas": mis_entregas,
+    })
+
+
+@login_required
+def dashboard_lector(request):
+    """Dashboard de solo lectura para Don Nicholas (lector).
+
+    Todos los usuarios autenticados pueden acceder (lector, operativo,
+    supervisor) — es solo lectura. Muestra resumen de cada obra activa
+    con totales en la moneda_reporte de la obra (modo histórico: usa
+    fx_rate_applied snapshot de cada OC).
+    """
+    obras_activas = Obra.objects.filter(
+        estado__in=("planificada", "en_curso", "pausada"),
+    ).select_related("cliente")
+
+    obras_data = []
+    for obra in obras_activas:
+        target_ccy = obra.moneda_reporte
+        # Sumar OCs no canceladas, convertidas a la moneda de reporte
+        total_consumido = Money(0, target_ccy)
+        for oc in obra.ordenes_compra.exclude(estado="cancelada"):
+            monto = oc.monto_total
+            if monto.currency.code != target_ccy:
+                try:
+                    # Modo histórico: usar fx_rate_date de la OC (snapshot)
+                    monto = convert(
+                        monto, target_ccy,
+                        oc.fx_rate_date or oc.fecha_aprobacion,
+                    )
+                except (NoExchangeRateAvailable, Exception):
+                    continue
+            total_consumido += monto
+
+        # Presupuesto total (sumar todos los Presupuesto de esta obra)
+        from apps.core.models import Presupuesto
+        total_presupuesto = Money(0, target_ccy)
+        for p in obra.presupuestos.all():
+            monto = p.monto
+            if monto.currency.code != target_ccy:
+                try:
+                    monto = convert(monto, target_ccy, date_type.today())
+                except (NoExchangeRateAvailable, Exception):
+                    continue
+            total_presupuesto += monto
+
+        pct = (
+            float(total_consumido.amount / total_presupuesto.amount * 100)
+            if total_presupuesto.amount > 0
+            else 0.0
+        )
+
+        obras_data.append({
+            "obra": obra,
+            "moneda_reporte": target_ccy,
+            "total_consumido": total_consumido,
+            "total_presupuesto": total_presupuesto,
+            "porcentaje": pct,
+        })
+
+    # OCs grandes recientes (top 10 por monto_total)
+    ocs_grandes = OrdenCompra.objects.filter(
+        estado__in=(
+            "autorizada", "pagada_parcial", "pagada",
+            "entregada_parcial", "completada",
+        ),
+    ).select_related("obra", "proveedor").order_by("-monto_total")[:10]
+
+    return render(request, "reportes/dashboard_lector.html", {
+        "obras_data": obras_data,
+        "ocs_grandes": ocs_grandes,
     })

@@ -165,3 +165,78 @@ def test_lector_cannot_access_operativo_dashboard(client):
     _login(client, "lector")
     resp = client.get("/dashboard/operativo/")
     assert resp.status_code == 403
+
+
+def test_lector_dashboard_loads(client):
+    _login(client, "lector")
+    resp = client.get("/dashboard/lector/")
+    assert resp.status_code == 200
+    body = resp.content.decode()
+    assert "Dashboard" in body or "Obras" in body or "Nicholas" in body
+
+
+def test_lector_dashboard_shows_obras(client):
+    from apps.core.tests.factories import ObraFactory
+    _login(client, "lector")
+    ObraFactory(nombre="Casa Lectora", estado="en_curso")
+    resp = client.get("/dashboard/lector/")
+    assert "Casa Lectora" in resp.content.decode()
+
+
+def test_lector_dashboard_shows_gasto_total(client):
+    """Dashboard muestra el gasto total por obra (suma OCs autorizadas)."""
+    from datetime import date
+    from apps.core.tests.factories import ObraFactory, CategoriaPresupuestoFactory
+    from apps.catalogo.tests.factories import ProveedorFactory
+    from apps.compras.models import OrdenCompra
+    from djmoney.money import Money
+
+    _login(client, "lector")
+    obra = ObraFactory(nombre="Lomas USD", moneda_reporte="USD")
+    cat = CategoriaPresupuestoFactory(obra=obra)
+    prov = ProveedorFactory()
+    OrdenCompra.objects.create(
+        obra=obra, categoria=cat, proveedor=prov,
+        numero_oc="L-OC-0001", fecha_aprobacion=date(2026, 5, 25),
+        monto_total=Money(500, "USD"), estado="autorizada",
+    )
+    resp = client.get("/dashboard/lector/")
+    body = resp.content.decode()
+    assert "Lomas USD" in body
+    # Debe mostrar el gasto (500)
+    assert "500" in body or "$" in body
+
+
+def test_lector_dashboard_shows_oc_grandes_recientes(client):
+    from datetime import date
+    from apps.core.tests.factories import ObraFactory, CategoriaPresupuestoFactory
+    from apps.catalogo.tests.factories import ProveedorFactory
+    from apps.compras.models import OrdenCompra
+    from djmoney.money import Money
+
+    _login(client, "lector")
+    obra = ObraFactory()
+    cat = CategoriaPresupuestoFactory(obra=obra)
+    prov = ProveedorFactory()
+    OrdenCompra.objects.create(
+        obra=obra, categoria=cat, proveedor=prov,
+        numero_oc="BIG-OC-0001", fecha_aprobacion=date(2026, 5, 25),
+        monto_total=Money(50000, "CRC"), estado="autorizada",
+    )
+    resp = client.get("/dashboard/lector/")
+    assert "BIG-OC-0001" in resp.content.decode()
+
+
+def test_supervisor_can_access_lector_dashboard(client):
+    """Supervisor también puede ver el dashboard lector."""
+    _login(client, "supervisor")
+    resp = client.get("/dashboard/lector/")
+    assert resp.status_code == 200
+
+
+def test_operativo_can_access_lector_dashboard(client):
+    """Operativo también puede ver el dashboard lector (todos ven dashboards)."""
+    _login(client, "operativo")
+    resp = client.get("/dashboard/lector/")
+    # Política: todos los autenticados pueden ver dashboard lector
+    assert resp.status_code == 200

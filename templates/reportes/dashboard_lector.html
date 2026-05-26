@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">Resumen general</h1>
+
+<section class="mb-8">
+  <h2 class="text-xl font-semibold mb-3">Obras activas</h2>
+  <div class="grid gap-4 md:grid-cols-2">
+    {% for d in obras_data %}
+    <div class="bg-white p-4 rounded shadow">
+      <h3 class="font-bold">{{ d.obra.nombre }}</h3>
+      <p class="text-sm text-gray-500">{{ d.obra.cliente.nombre }} · {{ d.obra.get_estado_display }}</p>
+      <div class="mt-3">
+        <p class="text-sm">Presupuesto: <strong>{{ d.total_presupuesto }}</strong></p>
+        <p class="text-sm">Ejecutado: <strong>{{ d.total_consumido }}</strong></p>
+        {% if d.total_presupuesto.amount > 0 %}
+        <div class="mt-2 w-full bg-gray-200 rounded h-2 overflow-hidden">
+          <div class="h-full
+              {% if d.porcentaje > 100 %}bg-red-500
+              {% elif d.porcentaje > 90 %}bg-orange-500
+              {% elif d.porcentaje > 70 %}bg-yellow-500
+              {% else %}bg-green-500{% endif %}"
+              style="width: {{ d.porcentaje|floatformat:0 }}%"></div>
+        </div>
+        <p class="text-xs mt-1 text-gray-500">{{ d.porcentaje|floatformat:1 }}% consumido (modo histórico)</p>
+        {% endif %}
+      </div>
+    </div>
+    {% empty %}
+    <p class="text-gray-500">Sin obras activas.</p>
+    {% endfor %}
+  </div>
+</section>
+
+<section>
+  <h2 class="text-xl font-semibold mb-3">Órdenes de compra grandes recientes</h2>
+  <table class="w-full bg-white shadow rounded text-sm">
+    <thead><tr class="border-b">
+      <th class="text-left p-2">OC</th>
+      <th class="text-left p-2">Obra</th>
+      <th class="text-left p-2">Proveedor</th>
+      <th class="text-right p-2">Monto</th>
+      <th class="text-left p-2">Estado</th>
+    </tr></thead>
+    <tbody>
+    {% for oc in ocs_grandes %}
+    <tr>
+      <td class="p-2">{{ oc.numero_oc }}</td>
+      <td class="p-2">{{ oc.obra.nombre }}</td>
+      <td class="p-2">{{ oc.proveedor.nombre }}</td>
+      <td class="p-2 text-right">{{ oc.monto_total }}</td>
+      <td class="p-2"><span class="badge-{% if oc.estado == 'completada' %}green{% elif oc.estado == 'cancelada' %}red{% else %}yellow{% endif %}">{{ oc.get_estado_display }}</span></td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="5" class="p-2 text-gray-500">Sin órdenes recientes.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}
