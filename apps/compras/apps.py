@@ -8,8 +8,6 @@ class ComprasConfig(AppConfig):
 
     def ready(self):
         from auditlog.registry import auditlog
-        from . import models
-        if hasattr(models, "SolicitudCotizacion"):
-            auditlog.register(models.SolicitudCotizacion)
-        if hasattr(models, "Cotizacion"):
-            auditlog.register(models.Cotizacion)
+        from .models import SolicitudCotizacion, Cotizacion
+        auditlog.register(SolicitudCotizacion)
+        auditlog.register(Cotizacion)
