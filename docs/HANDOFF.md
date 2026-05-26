@@ -162,3 +162,88 @@ Documentadas en spec con explicación inline. Los más críticos para ejecución
 - **AVX2 dependency en VM actual.** La VM corre sin AVX2 (verificado: `grep avx2 /proc/cpuinfo` vacío). Por eso el Dockerfile usa Node.js + `@tailwindcss/cli` npm en lugar del binario standalone de Tailwind v4 (que requiere AVX2). En hardware con AVX2, se puede quitar el bloque `nodejs npm` del Dockerfile y setear `TAILWIND_CLI_USE_SYSTEM_BINARY = False` en settings. Saving aprox 200 MB de imagen.
 - **`admin:logout` en `templates/base.html`.** El template base apunta el botón Salir a la URL de logout del admin de Django (`{% url 'admin:logout' %}`). Aceptable mientras solo se use admin para auth; cuando se agreguen vistas de autenticación propias (allauth o equivalente), migrar a `accounts:logout` o equivalente.
 - **`TAILWIND_CLI_VERSION` debe mantenerse sincronizado con npm pin.** Si se bumpa Tailwind, actualizar AMBOS: la línea `npm install -g @tailwindcss/cli@X.Y.Z tailwindcss@X.Y.Z` en `Dockerfile` Y `TAILWIND_CLI_VERSION = "X.Y.Z"` en `construmaster/settings.py`.
+
+---
+
+## Deploy a producción — runbook (Fase 11)
+
+### Pre-requisitos
+
+- `.env` con todos los secrets cargados (Gemini key, BCCR token, DJANGO_SECRET_KEY, POSTGRES_PASSWORD distinto a "CHANGEME", etc).
+- VM con Docker + docker compose v2.
+- (Opcional) cuenta de Cloudflare con dominio configurado.
+
+### 1. Cloudflare Tunnel (requiere acción manual del usuario)
+
+1. Abrir [dash.cloudflare.com → Zero Trust → Networks → Tunnels](https://one.dash.cloudflare.com/)
+2. Click "Create a tunnel" → Cloudflared.
+3. Nombre: `construmaster-prod` (o el que prefieras).
+4. Copiar el token (formato: `eyJhI...`).
+5. Pegar al `.env` como `CLOUDFLARED_TOKEN=eyJhI...`
+6. En el dashboard de Cloudflare, configurar el hostname público que apunte a `http://web:8000` (servicio interno del compose).
+7. (Opcional) Cloudflare Access para agregar SSO antes de Django auth — gratis hasta 50 usuarios.
+
+### 2. Levantar el stack en modo producción
+
+```bash
+cd /mnt/NAS/ConstruMaster
+docker compose --profile production up -d --build
+```
+
+Esto levanta postgres + redis + web + worker + **cloudflared** + **backup** sidecar.
+
+### 3. Setup inicial post-deploy
+
+```bash
+# Migraciones (web.entrypoint.sh las corre, pero por si acaso)
+docker compose exec web python manage.py migrate
+
+# Validar token BCCR
+docker compose exec web python manage.py verify_bccr_token
+
+# Backfill TC histórico (una sola vez)
+docker compose exec web python manage.py backfill_bccr_rates --desde 2026-01-01
+
+# Seed inicial (Cliente Nicholas + 3 bodegas)
+docker compose exec web python manage.py seed_initial_data
+
+# Crear superuser
+docker compose exec web python manage.py createsuperuser
+```
+
+### 4. Crear usuarios reales
+
+Desde el admin Django (`/admin/auth/user/`), crear:
+- `diana` → grupo `supervisor`
+- `gabriel` → grupo `supervisor`
+- `tony` → grupo `operativo`
+- `adrian` → grupo `operativo`
+- `nicholas` → grupo `lector`
+
+### 5. Verificar backups
+
+```bash
+# Forzar un backup de prueba
+docker compose exec backup /backup/run-backup.sh db
+docker compose exec backup ls -lh /dest/db/
+
+# Para mapear backupdata al NAS Synology vía NFS:
+# Editar docker-compose.yml:
+#   volumes:
+#     backupdata:
+#       driver: local
+#       driver_opts:
+#         type: nfs
+#         o: nfsvers=4,addr=<NAS_IP>,rw
+#         device: ":/volume1/backups/construmaster"
+# Luego: docker compose down && docker compose --profile production up -d
+```
+
+### 6. Smoke test post-deploy
+
+Acceder al dominio público de Cloudflare y verificar:
+1. Login en `/admin/` con superuser
+2. `/` redirige según rol del usuario
+3. Cada dashboard carga (supervisor/operativo/lector)
+4. Crear obra → cotización → aprobar → OC creada → pago → marcar pagado → subir factura XML → confirmar → registrar entrega
+5. Reportes con export CSV funcionan

@@ -76,8 +76,27 @@ services:
       - web
     profiles: ["production"]   # solo se levanta con `--profile production`
 
+  backup:
+    build:
+      context: .
+      dockerfile: docker/backup.Dockerfile
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - mediadata:/source:ro
+      - backupdata:/dest
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles: ["production"]
+
 volumes:
   pgdata:
   redisdata:
   mediadata:
   staticdata:
+  backupdata:

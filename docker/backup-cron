@@ -1,0 +1,3 @@
+# Crontab del sidecar de backup
+30 8 * * * /backup/run-backup.sh db >> /var/log/backup.log 2>&1
+0 */12 * * * /backup/run-backup.sh files >> /var/log/backup.log 2>&1
