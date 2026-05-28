@@ -563,27 +563,27 @@ test('list facturas filtra por ocId/status/tipoComprobante', async () => {
   let res = makeRes();
   await controllers.listFacturas(req, res);
   assert.equal(res.statusCode, 200);
-  assert.equal(res.body.items.length, 1);
+  assert.equal(res.body.length, 1);
 
   // Filtro por status
   req = makeReq({ query: { status: 'extracted' } });
   res = makeRes();
   await controllers.listFacturas(req, res);
-  assert.equal(res.body.items.length, 1);
+  assert.equal(res.body.length, 1);
 
   req = makeReq({ query: { status: 'confirmed' } });
   res = makeRes();
   await controllers.listFacturas(req, res);
-  assert.equal(res.body.items.length, 0);
+  assert.equal(res.body.length, 0);
 
   // Filtro por tipo
   req = makeReq({ query: { tipoComprobante: 'TE' } });
   res = makeRes();
   await controllers.listFacturas(req, res);
-  assert.equal(res.body.items.length, 1);
+  assert.equal(res.body.length, 1);
 
   req = makeReq({ query: { tipoComprobante: 'FE' } });
   res = makeRes();
   await controllers.listFacturas(req, res);
-  assert.equal(res.body.items.length, 0);
+  assert.equal(res.body.length, 0);
 });

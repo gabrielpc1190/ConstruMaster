@@ -530,12 +530,12 @@ test('GET /api/entregas devuelve lista con filtro por ocId', async () => {
   let res = makeRes();
   await controllers.listEntregas(makeReq({ query: {} }), res);
   assert.equal(res.statusCode, 200);
-  assert.equal(res.body.items.length, 2);
+  assert.equal(res.body.length, 2);
 
   res = makeRes();
   await controllers.listEntregas(makeReq({ query: { ocId: '100' } }), res);
-  assert.equal(res.body.items.length, 1);
-  assert.equal(res.body.items[0].ocId, 100);
+  assert.equal(res.body.length, 1);
+  assert.equal(res.body[0].ocId, 100);
 });
 
 test('POST /api/entregas/:id/fotos crea 3 EntregaFoto y escribe archivos a disco', async () => {
