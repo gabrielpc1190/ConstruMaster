@@ -12,9 +12,14 @@
  * El flow de aprobación vive en `services/oc-flow.js` para mantener este
  * controller delgado y testeable.
  */
+import fs from 'node:fs';
+import { unlink, stat } from 'node:fs/promises';
+import { extname } from 'node:path';
+
 import { z } from 'zod';
 import prisma from '../db.js';
 import { approveCotizacion } from '../services/oc-flow.js';
+import { absoluteFromUploads, relativeToUploads } from '../lib/uploads.js';
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -363,6 +368,228 @@ export async function aprobarCotizacion(req, res) {
       return res.status(409).json({ error: 'numeroOc duplicado (race condition no manejado)' });
     }
     logHandlerError('aprobarCotizacion', err);
+    return res.status(500).json({ error: 'Internal error' });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Archivo de evidencia (PDF / foto) — upload, download, delete
+// ---------------------------------------------------------------------------
+
+const ARCHIVO_ROLES_WRITE = new Set(['admin', 'supervisor', 'operativo']);
+const ARCHIVO_ROLES_DELETE = new Set(['admin', 'supervisor']);
+
+/** Borra un archivo del disco sin tirar si no existe. */
+async function safeUnlink(absPath) {
+  try {
+    await unlink(absPath);
+  } catch (err) {
+    if (err && err.code !== 'ENOENT') {
+      console.warn(`[compras] no se pudo borrar archivo ${absPath}: ${err.message}`);
+    }
+  }
+}
+
+/** Resuelve Content-Type según extensión (default octet-stream). */
+function contentTypeForExt(ext) {
+  switch (String(ext).toLowerCase()) {
+    case '.pdf': return 'application/pdf';
+    case '.jpg':
+    case '.jpeg': return 'image/jpeg';
+    case '.png': return 'image/png';
+    case '.heic': return 'image/heic';
+    case '.heif': return 'image/heif';
+    case '.webp': return 'image/webp';
+    default: return 'application/octet-stream';
+  }
+}
+
+/**
+ * POST /api/cotizaciones/:id/archivo
+ *
+ * Pre-requisito: middleware multer (cotizacionArchivoUpload) ya escribió
+ * `req.file`. Si la cotización ya tenía un archivo, lo reemplazamos borrando
+ * el viejo del disco. Si algo falla post-multer, intentamos limpiar el
+ * archivo recién escrito para evitar huérfanos.
+ */
+export async function uploadArchivoCotizacion(req, res) {
+  let absPath = null;
+
+  try {
+    if (!ARCHIVO_ROLES_WRITE.has(req.user?.role)) {
+      // Cleanup defensive: si por alguna razón llegamos sin permisos pero con
+      // archivo ya escrito, lo borramos.
+      if (req.file?.path) await safeUnlink(req.file.path);
+      return bad(res, 'No autorizado para adjuntar archivo a cotizaciones', 403);
+    }
+
+    const id = toBig(req.params.id);
+    if (id == null) {
+      if (req.file?.path) await safeUnlink(req.file.path);
+      return bad(res, 'id inválido', 400);
+    }
+
+    if (!req.file) {
+      return bad(res, 'Archivo requerido (field "archivo")', 400);
+    }
+    absPath = req.file.path;
+
+    const existing = await prisma.cotizacion.findUnique({
+      where: { id },
+      select: { id: true, archivoPath: true },
+    });
+    if (!existing) {
+      await safeUnlink(absPath);
+      return bad(res, 'Cotización no encontrada', 404);
+    }
+
+    const relPath = relativeToUploads(absPath);
+
+    // Si tenía archivo previo, borrarlo del disco antes de aceptar el nuevo.
+    let oldAbsPath = null;
+    if (existing.archivoPath) {
+      try {
+        oldAbsPath = absoluteFromUploads(existing.archivoPath);
+      } catch (err) {
+        console.warn(`[compras] archivoPath previo inválido (id=${id}): ${err.message}`);
+        oldAbsPath = null;
+      }
+    }
+
+    let updated;
+    try {
+      updated = await prisma.cotizacion.update({
+        where: { id },
+        data: { archivoPath: relPath },
+        select: { id: true, archivoPath: true },
+      });
+    } catch (err) {
+      // No pudimos actualizar la DB — el archivo nuevo queda huérfano, lo borramos.
+      await safeUnlink(absPath);
+      throw err;
+    }
+
+    // DB OK → ahora sí borramos el archivo viejo (best effort).
+    if (oldAbsPath) await safeUnlink(oldAbsPath);
+
+    // Stat para devolver tamaño aproximado en MB (cosmético para el cliente).
+    let sizeMb = null;
+    try {
+      const s = await stat(absPath);
+      sizeMb = Number((s.size / (1024 * 1024)).toFixed(2));
+    } catch {
+      // ignore
+    }
+
+    console.log(`[compras] cotizacion ${id} archivo subido (${relPath})`);
+    return res.status(200).json({
+      ok: true,
+      archivoPath: updated.archivoPath,
+      sizeMb,
+    });
+  } catch (err) {
+    if (absPath) await safeUnlink(absPath);
+    logHandlerError('uploadArchivoCotizacion', err);
+    return res.status(500).json({ error: 'Internal error' });
+  }
+}
+
+/**
+ * GET /api/cotizaciones/:id/archivo
+ *
+ * Streamea el archivo con Content-Disposition: inline (queremos preview en
+ * navegador si puede). Status 404 si no existe la cotización o no tiene archivo.
+ */
+export async function downloadArchivoCotizacion(req, res) {
+  try {
+    const id = toBig(req.params.id);
+    if (id == null) return bad(res, 'id inválido', 400);
+
+    const cot = await prisma.cotizacion.findUnique({
+      where: { id },
+      select: { archivoPath: true, numeroCotizacion: true },
+    });
+    if (!cot) return bad(res, 'Cotización no encontrada', 404);
+    if (!cot.archivoPath) return bad(res, 'Cotización sin archivo adjunto', 404);
+
+    let absPath;
+    try {
+      absPath = absoluteFromUploads(cot.archivoPath);
+    } catch {
+      return bad(res, 'archivoPath inválido', 500);
+    }
+
+    try {
+      await stat(absPath);
+    } catch {
+      return bad(res, 'Archivo no encontrado en disco', 404);
+    }
+
+    const ext = extname(cot.archivoPath);
+    // Filename: usamos el último segmento del path (que ya incluye el nombre
+    // sanitizado tras el UUID prefix). Para el browser quitamos el prefijo UUID.
+    const baseName = cot.archivoPath.split('/').pop() || `cotizacion-${id}${ext}`;
+    const displayName = baseName.replace(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-/i, '');
+    const safeName = displayName || `cotizacion-${id}${ext}`;
+
+    res.setHeader('Content-Type', contentTypeForExt(ext));
+    res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
+    res.setHeader('X-Cotizacion-Numero', cot.numeroCotizacion || '');
+
+    const stream = fs.createReadStream(absPath);
+    stream.on('error', (err) => {
+      console.error('[compras] downloadArchivoCotizacion stream error:', err);
+      if (!res.headersSent) res.status(500).json({ error: 'Error leyendo archivo' });
+    });
+    stream.pipe(res);
+  } catch (err) {
+    logHandlerError('downloadArchivoCotizacion', err);
+    return res.status(500).json({ error: 'Internal error' });
+  }
+}
+
+/**
+ * DELETE /api/cotizaciones/:id/archivo
+ *
+ * Solo admin/supervisor. Borra el archivo del disco (best-effort) y setea
+ * `archivoPath = null`.
+ */
+export async function deleteArchivoCotizacion(req, res) {
+  try {
+    if (!ARCHIVO_ROLES_DELETE.has(req.user?.role)) {
+      return bad(res, 'Solo admin/supervisor pueden eliminar el archivo', 403);
+    }
+    const id = toBig(req.params.id);
+    if (id == null) return bad(res, 'id inválido', 400);
+
+    const existing = await prisma.cotizacion.findUnique({
+      where: { id },
+      select: { id: true, archivoPath: true },
+    });
+    if (!existing) return bad(res, 'Cotización no encontrada', 404);
+    if (!existing.archivoPath) {
+      // Idempotente: si no tiene archivo, OK; igual devolvemos 200.
+      return res.json({ ok: true, archivoPath: null });
+    }
+
+    let absPath = null;
+    try {
+      absPath = absoluteFromUploads(existing.archivoPath);
+    } catch (err) {
+      console.warn(`[compras] archivoPath inválido al borrar (id=${id}): ${err.message}`);
+    }
+
+    await prisma.cotizacion.update({
+      where: { id },
+      data: { archivoPath: null },
+    });
+
+    if (absPath) await safeUnlink(absPath);
+
+    console.log(`[compras] cotizacion ${id} archivo eliminado`);
+    return res.json({ ok: true, archivoPath: null });
+  } catch (err) {
+    logHandlerError('deleteArchivoCotizacion', err);
     return res.status(500).json({ error: 'Internal error' });
   }
 }

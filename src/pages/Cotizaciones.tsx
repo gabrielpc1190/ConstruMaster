@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus } from 'lucide-react';
+import { Plus, FileText } from 'lucide-react';
 import { useList } from '../hooks/useApi';
 import { Button } from '../components/ui/Button';
 import { Select, Field } from '../components/ui/Input';
 import { Table } from '../components/ui/Table';
 import { Badge } from '../components/ui/Badge';
 import { PageHeader } from '../components/ui/PageHeader';
+import { CotizacionOcrModal, type ParsedCotizacion } from '../components/CotizacionOcrModal';
 import { formatDate, formatMoney } from '../lib/format';
 import { COTIZACION_ESTADO_META, cotizacionMeta, type CotizacionEstado } from '../lib/badges';
 import type { Cotizacion, ObraLite, ProveedorLite } from '../types/compras';
@@ -17,6 +18,14 @@ export default function Cotizaciones() {
   const [obraId, setObraId] = useState<string>('');
   const [proveedorId, setProveedorId] = useState<string>('');
   const [estado, setEstado] = useState<CotizacionEstado | ''>('');
+  const [ocrOpen, setOcrOpen] = useState(false);
+
+  const handleOcrParsed = (parsed: ParsedCotizacion) => {
+    setOcrOpen(false);
+    // Navegamos al form de nueva cotización con el JSON extraído + matches.
+    // CotizacionForm lee `location.state.prefill` y siembra los inputs.
+    navigate('/cotizaciones/new', { state: { prefill: parsed } });
+  };
 
   const { data: obras = [] } = useList<ObraLite>(['obras', 'lite'], '/obras');
   const { data: proveedores = [] } = useList<ProveedorLite>(['proveedores', 'lite'], '/proveedores');
@@ -43,10 +52,21 @@ export default function Cotizaciones() {
         title="Cotizaciones"
         subtitle="Recepción, revisión y aprobación de cotizaciones de proveedores"
         actions={
-          <Button onClick={() => navigate('/cotizaciones/new')}>
-            <Plus className="w-4 h-4" /> Nueva cotización
-          </Button>
+          <>
+            <Button variant="secondary" onClick={() => setOcrOpen(true)}>
+              <FileText className="w-4 h-4" /> Importar desde PDF
+            </Button>
+            <Button onClick={() => navigate('/cotizaciones/new')}>
+              <Plus className="w-4 h-4" /> Nueva cotización
+            </Button>
+          </>
         }
+      />
+
+      <CotizacionOcrModal
+        open={ocrOpen}
+        onClose={() => setOcrOpen(false)}
+        onParsed={handleOcrParsed}
       />
 
       <div className="bg-white rounded-lg ring-1 ring-slate-200 p-4 mb-4 grid grid-cols-1 md:grid-cols-3 gap-3">

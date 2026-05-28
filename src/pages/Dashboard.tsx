@@ -142,7 +142,7 @@ export default function Dashboard() {
         <div className="bg-amber-50 border border-amber-200 rounded-md px-4 py-3 text-sm text-amber-900 flex items-start gap-2">
           <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
           <div>
-            <strong>Modo desarrollo:</strong> sistema en Fase 2. Algunas secciones del sidebar (RFQs, Pagos globales, Entregas globales, Reportes, Usuarios) están en construcción.
+            <strong>Modo desarrollo:</strong> sistema en Fase 2. Algunas secciones (solicitudes formales, reportes, etc.) están en construcción.
           </div>
         </div>
       )}

@@ -212,7 +212,7 @@ export default function OcDetail() {
             </Link>
           </div>
           <p className="text-xs text-slate-500 mt-2">
-            Subí facturas XML desde el módulo Facturas seleccionando esta OC.
+            Subí comprobantes electrónicos desde el módulo Facturas seleccionando esta orden.
           </p>
         </section>
 

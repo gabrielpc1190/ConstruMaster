@@ -266,3 +266,120 @@ export const fotoUpload = multer({
     files: 10, // hasta 10 fotos por request
   },
 }).array('fotos', 10);
+
+// ---------------------------------------------------------------------------
+// Multer middleware para subida de ARCHIVO DE EVIDENCIA de cotizaciones
+// ---------------------------------------------------------------------------
+//
+// Layout: `uploads/cotizaciones/<año>/<mes>/<cotizacionId>/<uuid>-<filename>`.
+// Acepta: application/pdf, image/jpeg, image/png, image/heic, image/heif,
+//         image/webp. Field name: `archivo` (single).
+// Máx: 20 MiB por archivo.
+//
+// Decisiones:
+//  - El `cotizacionId` viene en `req.params.cotizacionId` o `req.params.id`
+//    (la ruta es POST /api/cotizaciones/:id/archivo). Multer ejecuta
+//    `destination` ANTES del controller, por lo que el id ya está disponible.
+//  - NO recomprimimos. Bytes raw — la cotización es evidencia legal del precio
+//    ofrecido por el proveedor.
+//  - El nombre original se sanitiza vía `sanitizeFilename`.
+
+const COTIZACION_ARCHIVO_MIME_TYPES = new Set([
+  'application/pdf',
+  'image/jpeg',
+  'image/png',
+  'image/heic',
+  'image/heif',
+  'image/webp',
+]);
+const COTIZACION_ARCHIVO_EXT_WHITELIST = new Set([
+  '.pdf',
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.heic',
+  '.heif',
+  '.webp',
+]);
+
+function cotizacionArchivoFileFilter(_req, file, cb) {
+  const ext = extname(file.originalname || '').toLowerCase();
+  if (
+    COTIZACION_ARCHIVO_MIME_TYPES.has(file.mimetype) ||
+    COTIZACION_ARCHIVO_EXT_WHITELIST.has(ext)
+  ) {
+    return cb(null, true);
+  }
+  const err = new Error(
+    `Tipo de archivo no permitido (mime=${file.mimetype}, ext=${ext}). Esperado PDF, JPEG, PNG, HEIC, HEIF o WEBP.`,
+  );
+  err.status = 415;
+  err.code = 'INVALID_FILE_TYPE';
+  return cb(err);
+}
+
+const cotizacionArchivoStorage = multer.diskStorage({
+  destination(req, _file, cb) {
+    try {
+      const cotizacionId = req.params.cotizacionId ?? req.params.id ?? 'unknown';
+      const date = new Date();
+      const year = String(date.getUTCFullYear());
+      const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+      const dir = join(UPLOADS_ROOT, 'cotizaciones', year, month, String(cotizacionId));
+      if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true });
+      }
+      cb(null, dir);
+    } catch (err) {
+      cb(err);
+    }
+  },
+  filename(_req, file, cb) {
+    try {
+      const safe = sanitizeFilename(file.originalname);
+      cb(null, `${randomUUID()}-${safe}`);
+    } catch (err) {
+      cb(err);
+    }
+  },
+});
+
+/**
+ * Genera la ruta de destino RELATIVA a `uploads/` para un archivo de
+ * cotización. Útil en tests para producir paths sin pasar por multer.
+ *
+ * Layout: `cotizaciones/<año>/<mes>/<cotizacionId>/<uuid>-<sanitized>`
+ *
+ * @param {{ cotizacionId: string|number|bigint, originalName: string, now?: Date }} args
+ * @returns {{ relativePath: string, absolutePath: string, filename: string, dir: string }}
+ */
+export function cotizacionArchivoStoragePath({ cotizacionId, originalName, now }) {
+  const date = now instanceof Date ? now : new Date();
+  const year = String(date.getUTCFullYear());
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const safeName = sanitizeFilename(originalName);
+  const filename = `${randomUUID()}-${safeName}`;
+  const dirRel = `cotizaciones/${year}/${month}/${String(cotizacionId)}`;
+  const relativePath = `${dirRel}/${filename}`;
+  const absolutePath = join(UPLOADS_ROOT, dirRel, filename);
+  return {
+    relativePath,
+    absolutePath,
+    filename,
+    dir: join(UPLOADS_ROOT, dirRel),
+  };
+}
+
+/**
+ * Middleware multer para subida de archivo de evidencia de cotización. Lee un
+ * único archivo del field `archivo`. Tira 415 si el mimetype no es PDF/imagen,
+ * 413 si excede 20 MiB.
+ */
+export const cotizacionArchivoUpload = multer({
+  storage: cotizacionArchivoStorage,
+  fileFilter: cotizacionArchivoFileFilter,
+  limits: {
+    fileSize: 20 * 1024 * 1024, // 20 MiB
+    files: 1,
+  },
+}).single('archivo');

@@ -12,6 +12,7 @@ import { Drawer } from '../components/ui/Drawer';
 import { Input, Select, Textarea, Field } from '../components/ui/Input';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Table } from '../components/ui/Table';
+import { CotizacionArchivoUpload } from '../components/CotizacionArchivoUpload';
 import { formatDate, formatMoney, toDateInput } from '../lib/format';
 import { cotizacionMeta } from '../lib/badges';
 import type { CategoriaLite, Cotizacion, CotizacionItem, Oc } from '../types/compras';
@@ -51,6 +52,8 @@ export default function CotizacionDetail() {
   // 'operativo' — comparamos string a string sin estrechar el tipo.
   const role = String(user?.role ?? '');
   const canApprove = role === 'admin' || role === 'supervisor';
+  const canArchivoWrite = role === 'admin' || role === 'supervisor' || role === 'operativo';
+  const canArchivoDelete = role === 'admin' || role === 'supervisor';
 
   const meta = useMemo(() => (cotizacion ? cotizacionMeta(cotizacion.estado) : null), [cotizacion]);
 
@@ -151,7 +154,7 @@ export default function CotizacionDetail() {
             <Info label="Plazo entrega" value={cotizacion.plazoEntregaDias != null ? `${cotizacion.plazoEntregaDias} días` : '—'} />
             <Info label="Condiciones de pago" value={cotizacion.condicionesPago ?? '—'} />
             <Info label="% anticipo" value={cotizacion.pctAnticipo != null ? `${cotizacion.pctAnticipo}%` : '—'} />
-            <Info label="RFQ" value={cotizacion.rfqId ? `#${cotizacion.rfqId}` : '—'} />
+            <Info label="Solicitud de cotización" value={cotizacion.rfqId ? `#${cotizacion.rfqId}` : '—'} />
           </dl>
         </section>
 
@@ -218,7 +221,26 @@ export default function CotizacionDetail() {
           </div>
         </section>
 
-        {/* Sección 3: OC vinculada si aprobada */}
+        {/* Sección 3: Archivo de evidencia */}
+        <section className="bg-white rounded-lg ring-1 ring-slate-200 p-5">
+          <div className="mb-3">
+            <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">Archivo de evidencia</h2>
+            <p className="text-xs text-slate-500 mt-1">
+              PDF, foto o escaneo de la cotización del proveedor.
+            </p>
+          </div>
+          <CotizacionArchivoUpload
+            cotizacionId={cotizacion.id}
+            currentPath={cotizacion.archivoPath ?? null}
+            canWrite={canArchivoWrite}
+            canDelete={canArchivoDelete}
+            // En el detail, cuando cambia el archivo invalidamos la query y
+            // la prop `currentPath` se refresca solo a través de cotizacion.
+            onChange={() => qc.invalidateQueries({ queryKey: ['cotizaciones', id] })}
+          />
+        </section>
+
+        {/* Sección 4: OC vinculada si aprobada */}
         {cotizacion.estado === 'aprobada' && cotizacion.oc && (
           <section className="bg-emerald-50 rounded-lg ring-1 ring-emerald-200 p-5">
             <h2 className="text-sm font-semibold text-emerald-900 mb-2 uppercase tracking-wide">
@@ -236,7 +258,7 @@ export default function CotizacionDetail() {
           </section>
         )}
 
-        {/* Sección 4: Notas */}
+        {/* Sección 5: Notas */}
         {cotizacion.notas && (
           <section className="bg-white rounded-lg ring-1 ring-slate-200 p-5">
             <h2 className="text-sm font-semibold text-slate-900 mb-3 uppercase tracking-wide">Notas</h2>

@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react';
-import { useNavigate, useParams, Link } from 'react-router-dom';
+import { useNavigate, useParams, Link, useLocation } from 'react-router-dom';
 import { Plus, Trash2 } from 'lucide-react';
 import { useItem, useList, useCreate, useUpdate } from '../hooks/useApi';
 import { useToast } from '../context/ToastContext';
+import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/Button';
 import { Input, Select, Textarea, Field } from '../components/ui/Input';
 import { PageHeader } from '../components/ui/PageHeader';
 import { ItemCatalogoAutocomplete } from '../components/ItemCatalogoAutocomplete';
+import { CotizacionArchivoUpload } from '../components/CotizacionArchivoUpload';
 // Nota: ItemCatalogoAutocomplete (creado por el agente de Catálogo) siempre
 // devuelve un id numérico real (autocrea si el usuario elige "+ Crear nuevo").
 // El displayText viene como "nombreCanonico (unidad)" — lo usamos para sembrar
@@ -81,12 +83,18 @@ function round2(n: number): number {
 export default function CotizacionForm() {
   const navigate = useNavigate();
   const { showToast } = useToast();
+  const { user } = useAuth();
   const params = useParams<{ id?: string }>();
   const editingId = params.id ? Number(params.id) : null;
   const isEdit = Boolean(editingId);
 
+  const role = String(user?.role ?? '');
+  const canWrite = role === 'admin' || role === 'supervisor' || role === 'operativo';
+  const canDelete = role === 'admin' || role === 'supervisor';
+
   const [form, setForm] = useState<FormState>(emptyForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [archivoPath, setArchivoPath] = useState<string | null>(null);
 
   const { data: obras = [] } = useList<ObraLite>(['obras', 'lite'], '/obras');
   const { data: proveedores = [] } = useList<ProveedorLite>(['proveedores', 'lite'], '/proveedores');
@@ -97,6 +105,64 @@ export default function CotizacionForm() {
     isEdit,
   );
 
+  // Prefill desde OCR (Cotizaciones.tsx → navigate('/cotizaciones/new', { state }))
+  // Hidratamos una sola vez con la data extraída por Gemini, manteniendo el
+  // mismo patrón "adjust state while rendering" que usamos para `existing`.
+  const location = useLocation();
+  const [ocrPrefilled, setOcrPrefilled] = useState(false);
+  if (!isEdit && !ocrPrefilled) {
+    const st = (location.state ?? null) as { prefill?: { data?: Record<string, unknown>; matches?: Record<string, unknown> } } | null;
+    const prefill = st?.prefill;
+    if (prefill && prefill.data) {
+      setOcrPrefilled(true);
+      const d = prefill.data as Record<string, unknown>;
+      const m = (prefill.matches ?? {}) as { proveedorId?: number | null; items?: Array<Record<string, unknown>> };
+      const matchedItems = m.items ?? [];
+      const ocrItems = Array.isArray(d.items) ? (d.items as Array<Record<string, unknown>>) : [];
+      const merged = (ocrItems.length > 0 ? ocrItems : [{}]).map((raw, idx) => {
+        const matched = matchedItems[idx] ?? {};
+        const cantidad = (raw.cantidad ?? matched.cantidad);
+        const precio = (raw.precioUnitario ?? matched.precioUnitario);
+        const subtotalLine = (raw.subtotal ?? matched.subtotal);
+        // Inferir IVA % a partir de subtotal vs ivaMonto si está disponible.
+        const ivaMonto = Number(raw.ivaMonto ?? matched.ivaMonto ?? 0);
+        const subNum = Number(subtotalLine ?? (Number(cantidad ?? 0) * Number(precio ?? 0)));
+        const ivaPctInferred = subNum > 0 && ivaMonto > 0
+          ? Math.round((ivaMonto / subNum) * 100)
+          : null;
+        return {
+          rid: `ocr-${idx}-${Math.random().toString(36).slice(2, 6)}`,
+          materialId: (matched.materialId as number | null | undefined) ?? null,
+          descripcion: String(raw.descripcion ?? matched.descripcion ?? ''),
+          cantidad: cantidad != null ? String(cantidad) : '',
+          unidad: String(raw.unidad ?? matched.unidad ?? ''),
+          precioUnitario: precio != null ? String(precio) : '',
+          ivaPct: ivaPctInferred != null ? String(ivaPctInferred) : '13',
+          codigoCabys: '',
+        };
+      });
+      const prov = (d.proveedor ?? {}) as Record<string, unknown>;
+      const proveedorIdMatch = m.proveedorId;
+      setForm({
+        obraId: '',
+        proveedorId: proveedorIdMatch != null ? String(proveedorIdMatch) : '',
+        numeroCotizacion: String(d.numeroCotizacion ?? ''),
+        fecha: String(d.fecha ?? toDateInput(new Date().toISOString())),
+        fechaValidez: String(d.fechaValidez ?? ''),
+        moneda: (d.moneda === 'USD' ? 'USD' : 'CRC') as Moneda,
+        condicionesPago: String(d.condicionesPago ?? ''),
+        plazoEntregaDias: d.plazoEntregaDias != null ? String(d.plazoEntregaDias) : '',
+        pctAnticipo: d.pctAnticipo != null ? String(d.pctAnticipo) : '',
+        esEspecial: false,
+        notas: [
+          d.notas ? `OCR: ${d.notas}` : '',
+          prov.nombre && !proveedorIdMatch ? `Proveedor detectado: ${String(prov.nombre)}${prov.identificacion ? ` (${String(prov.identificacion)})` : ''}` : '',
+        ].filter(Boolean).join('\n'),
+        items: merged,
+      });
+    }
+  }
+
   // Hidratar el form una sola vez cuando llegan los datos del servidor (en modo
   // edición). Patrón "adjust state while rendering" recomendado por React 19
   // (https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes):
@@ -105,6 +171,7 @@ export default function CotizacionForm() {
   const [hydratedId, setHydratedId] = useState<number | null>(null);
   if (isEdit && existing && hydratedId !== existing.id) {
     setHydratedId(existing.id);
+    setArchivoPath(existing.archivoPath ?? null);
     setForm({
       obraId: String(existing.obraId),
       proveedorId: String(existing.proveedorId),
@@ -243,8 +310,12 @@ export default function CotizacionForm() {
     } else {
       createMut.mutate(payload, {
         onSuccess: (resp) => {
-          showToast('Cotización creada', 'success');
-          if (resp?.id) navigate(`/cotizaciones/${resp.id}`);
+          // Decisión: tras crear, navegamos al MODO EDIT (no al detail) para que
+          // el usuario quede en una pantalla habilitada para subir el archivo
+          // de evidencia recién después de tener el id. El form en edit muestra
+          // la sección "Archivo de evidencia" activa.
+          showToast('Cotización guardada. Ahora podés adjuntar el archivo de evidencia.', 'success');
+          if (resp?.id) navigate(`/cotizaciones/${resp.id}/edit`);
           else navigate('/cotizaciones');
         },
         onError: (err) => showToast(err.message || 'Error al crear cotización', 'error'),
@@ -372,7 +443,7 @@ export default function CotizacionForm() {
                 className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
               />
               <label htmlFor="esEspecial" className="text-sm text-slate-700">
-                Cotización especial (sin RFQ, ej. compra urgente)
+                Compra urgente (sin pedir cotizaciones a otros proveedores)
               </label>
             </div>
 
@@ -538,6 +609,23 @@ export default function CotizacionForm() {
               Calculado a partir de los items. El servidor revalida (tolerancia ₡1) y rechaza si no cuadra.
             </p>
           </aside>
+        </section>
+
+        {/* Archivo de evidencia (PDF o foto) */}
+        <section className="bg-white rounded-lg ring-1 ring-slate-200 p-5">
+          <div className="mb-3">
+            <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">Archivo de evidencia</h2>
+            <p className="text-xs text-slate-500 mt-1">
+              PDF, foto o escaneo de la cotización del proveedor (opcional).
+            </p>
+          </div>
+          <CotizacionArchivoUpload
+            cotizacionId={editingId}
+            currentPath={archivoPath}
+            canWrite={canWrite}
+            canDelete={canDelete}
+            onChange={(p) => setArchivoPath(p)}
+          />
         </section>
 
         <div className="flex justify-end gap-2">

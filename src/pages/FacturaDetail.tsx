@@ -257,7 +257,7 @@ export default function FacturaDetail() {
 
           <div className="flex items-center gap-2 flex-wrap">
             <Button variant="secondary" onClick={handleDownload} disabled={downloading}>
-              <Download className="w-4 h-4" /> {downloading ? 'Descargando…' : 'Descargar XML'}
+              <Download className="w-4 h-4" /> {downloading ? 'Descargando…' : 'Descargar comprobante'}
             </Button>
 
             {factura.status === 'extracted' && canActuar && (
@@ -388,7 +388,7 @@ export default function FacturaDetail() {
         <Table<ExtractedItem & { __idx: number }>
           rows={items.map((it, idx) => ({ ...it, __idx: idx }))}
           rowKey={(r) => r.__idx}
-          empty={<span>El XML no incluye items o no fueron extraídos.</span>}
+          empty={<span>El comprobante no incluye líneas o no fueron extraídas.</span>}
           columns={[
             {
               key: 'cabys',

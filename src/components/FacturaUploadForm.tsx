@@ -86,7 +86,7 @@ export function FacturaUploadForm({ initialOcId, onUploaded, onCancel }: Props) 
       return;
     }
     if (!isValidXml(f)) {
-      setErrors((e) => ({ ...e, file: 'El archivo debe ser un XML (.xml).' }));
+      setErrors((e) => ({ ...e, file: 'El archivo debe ser un comprobante electrónico (.xml).' }));
       setFile(null);
       return;
     }
@@ -105,7 +105,7 @@ export function FacturaUploadForm({ initialOcId, onUploaded, onCancel }: Props) 
     e?.preventDefault();
     const next: typeof errors = {};
     if (!ocId) next.ocId = 'Seleccioná la OC asociada.';
-    if (!file) next.file = 'Adjuntá el XML de la factura.';
+    if (!file) next.file = 'Adjuntá el archivo .xml del comprobante electrónico.';
     if (Object.keys(next).length) {
       setErrors(next);
       return;
@@ -116,7 +116,7 @@ export function FacturaUploadForm({ initialOcId, onUploaded, onCancel }: Props) 
         onSuccess: (factura) => {
           qc.invalidateQueries({ queryKey: ['facturas'] });
           if (factura.status === 'error') {
-            const msg = factura.errorMessage || 'XML inválido';
+            const msg = factura.errorMessage || 'Comprobante electrónico inválido';
             showToast(`Factura cargada con error: ${msg}`, 'error');
             onUploaded?.(factura);
             // Aun así abrimos el detail para que se vea el error.
@@ -177,7 +177,7 @@ export function FacturaUploadForm({ initialOcId, onUploaded, onCancel }: Props) 
         </Select>
       </Field>
 
-      <Field label="Archivo XML" required error={errors.file} hint="Solo se aceptan XMLs de Hacienda CR (.xml).">
+      <Field label="Comprobante electrónico (.xml)" required error={errors.file} hint="Archivo XML emitido por el proveedor según el formato de Hacienda CR.">
         <div
           onDragOver={(e) => {
             e.preventDefault();
@@ -225,7 +225,7 @@ export function FacturaUploadForm({ initialOcId, onUploaded, onCancel }: Props) 
             <>
               <UploadCloud className="w-10 h-10 text-slate-400" />
               <p className="text-sm text-slate-600">
-                Arrastrá el XML acá o <span className="text-indigo-600 font-medium">hacé click para elegirlo</span>
+                Arrastrá el archivo acá o <span className="text-indigo-600 font-medium">hacé click para elegirlo</span>
               </p>
               <p className="text-xs text-slate-400">Tamaño máximo recomendado: 2 MB</p>
             </>
