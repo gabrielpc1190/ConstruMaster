@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Ban, FileText, Pencil, Truck, Receipt, CreditCard } from 'lucide-react';
+import { ArrowLeft, Ban, FileText, Pencil, Receipt } from 'lucide-react';
+import { PagosSection } from '../components/oc/PagosSection';
+import { HitosSection } from '../components/oc/HitosSection';
+import { EntregasSection } from '../components/oc/EntregasSection';
 import { useQueryClient } from '@tanstack/react-query';
 import { useItem } from '../hooks/useApi';
 import { api } from '../services/api';
@@ -189,29 +192,29 @@ export default function OcDetail() {
           />
         </section>
 
-        {/* Sección 3: Pagos (placeholder) */}
-        <PlaceholderSection
-          icon={<CreditCard className="w-5 h-5 text-slate-400" />}
-          title="Pagos"
-          subtitle="Sin pagos registrados todavía"
-          hint="TODO Fase 2: programar pagos contra esta OC, vincular a hitos y registrar comprobantes."
-        />
+        {/* Sección 3: Pagos */}
+        <PagosSection ocId={oc.id} ocMoneda={oc.moneda} ocMontoTotal={oc.montoTotal} ocEstado={oc.estado} />
 
-        {/* Sección 4: Facturas (placeholder) */}
-        <PlaceholderSection
-          icon={<Receipt className="w-5 h-5 text-slate-400" />}
-          title="Facturas"
-          subtitle="Sin facturas vinculadas todavía"
-          hint="TODO Fase 2: subir XML Hacienda CR v4.4, parsear inline y confirmar/anular."
-        />
+        {/* Sección 4: Hitos (solo si hay items de servicio) */}
+        <HitosSection ocId={oc.id} />
 
-        {/* Sección 5: Entregas (placeholder) */}
-        <PlaceholderSection
-          icon={<Truck className="w-5 h-5 text-slate-400" />}
-          title="Entregas"
-          subtitle="Sin entregas registradas todavía"
-          hint="TODO Fase 2: registrar recepción parcial/total en bodega, fotos y reconciliación."
-        />
+        {/* Sección 5: Entregas */}
+        <EntregasSection ocId={oc.id} />
+
+        {/* Sección 6: Facturas (link al listado filtrado) */}
+        <section className="bg-white rounded-lg ring-1 ring-slate-200 p-5">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide flex items-center gap-2">
+              <Receipt className="w-4 h-4" /> Facturas
+            </h2>
+            <Link to={`/facturas?ocId=${oc.id}`} className="text-sm font-medium text-indigo-600 hover:text-indigo-700">
+              Ver facturas de esta OC →
+            </Link>
+          </div>
+          <p className="text-xs text-slate-500 mt-2">
+            Subí facturas XML desde el módulo Facturas seleccionando esta OC.
+          </p>
+        </section>
 
         {/* Sección 6: Notas */}
         {oc.notas && (
@@ -312,27 +315,3 @@ function Info({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-function PlaceholderSection({
-  icon,
-  title,
-  subtitle,
-  hint,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  subtitle: string;
-  hint?: string;
-}) {
-  return (
-    <section className="bg-slate-50 rounded-lg ring-1 ring-slate-200 p-5">
-      <div className="flex items-start gap-3">
-        <div className="mt-0.5">{icon}</div>
-        <div className="flex-1">
-          <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">{title}</h2>
-          <p className="text-sm text-slate-500 mt-1">{subtitle}</p>
-          {hint && <p className="text-xs text-slate-400 mt-2 italic">{hint}</p>}
-        </div>
-      </div>
-    </section>
-  );
-}

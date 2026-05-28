@@ -21,6 +21,11 @@ import OCs from './pages/OCs';
 import OcDetail from './pages/OcDetail';
 import Facturas from './pages/Facturas';
 import FacturaDetail from './pages/FacturaDetail';
+import Pagos from './pages/Pagos';
+import Entregas from './pages/Entregas';
+import EntregaDetail from './pages/EntregaDetail';
+import TipoDeCambio from './pages/TipoDeCambio';
+import Usuarios from './pages/Usuarios';
 
 function App() {
   return (
@@ -52,6 +57,14 @@ function App() {
 
                     <Route path="/facturas" element={<Facturas />} />
                     <Route path="/facturas/:id" element={<FacturaDetail />} />
+
+                    <Route path="/pagos" element={<Pagos />} />
+                    <Route path="/entregas" element={<Entregas />} />
+                    <Route path="/entregas/:id" element={<EntregaDetail />} />
+
+                    <Route path="/tipo-cambio" element={<TipoDeCambio />} />
+
+                    <Route path="/usuarios" element={<Usuarios />} />
                   </Route>
                 </Route>
 

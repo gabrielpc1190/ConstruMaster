@@ -169,3 +169,100 @@ export const xmlUpload = multer({
     files: 1,
   },
 }).single('archivo');
+
+// ---------------------------------------------------------------------------
+// Multer middleware para subida de FOTOS de entregas
+// ---------------------------------------------------------------------------
+//
+// Layout: `uploads/entregas/<año>/<mes>/<entregaId>/<uuid>-<filename>`.
+// Acepta: image/jpeg, image/png, image/heif, image/heic, image/webp.
+// Máx: 10 MiB por archivo, 10 archivos por request. Field: `fotos` (array).
+//
+// IMPORTANTE: NO recomprimimos. Guardamos bytes raw para preservar EXIF
+// (las fotos son evidencia legal de recepción de material). Si en el futuro
+// se usa `sharp` para thumbnails, asegurar `withMetadata()` en pipeline.
+
+const FOTO_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/heif',
+  'image/heic',
+  'image/webp',
+]);
+const FOTO_EXT_WHITELIST = new Set(['.jpg', '.jpeg', '.png', '.heif', '.heic', '.webp']);
+
+function fotoFileFilter(_req, file, cb) {
+  const ext = extname(file.originalname || '').toLowerCase();
+  if (FOTO_MIME_TYPES.has(file.mimetype) || FOTO_EXT_WHITELIST.has(ext)) {
+    return cb(null, true);
+  }
+  const err = new Error(
+    `Tipo de archivo no permitido (mime=${file.mimetype}, ext=${ext}). Esperado JPEG, PNG, HEIF o WEBP.`,
+  );
+  err.status = 415;
+  err.code = 'INVALID_FILE_TYPE';
+  return cb(err);
+}
+
+const fotoStorage = multer.diskStorage({
+  destination(req, _file, cb) {
+    try {
+      const entregaId = req.params.id ?? req.params.entregaId ?? 'unknown';
+      const date = new Date();
+      const year = String(date.getUTCFullYear());
+      const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+      const dir = join(UPLOADS_ROOT, 'entregas', year, month, String(entregaId));
+      if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true });
+      }
+      cb(null, dir);
+    } catch (err) {
+      cb(err);
+    }
+  },
+  filename(_req, file, cb) {
+    try {
+      const safe = sanitizeFilename(file.originalname);
+      cb(null, `${randomUUID()}-${safe}`);
+    } catch (err) {
+      cb(err);
+    }
+  },
+});
+
+/**
+ * Genera la ruta de destino RELATIVA a `uploads/` para una foto de entrega.
+ * Útil en tests para producir paths sin pasar por multer.
+ *
+ * @param {{ entregaId: string|number|bigint, originalName: string, now?: Date }} args
+ * @returns {{ relativePath: string, absolutePath: string, filename: string, dir: string }}
+ */
+export function entregaFotoStoragePath({ entregaId, originalName, now }) {
+  const date = now instanceof Date ? now : new Date();
+  const year = String(date.getUTCFullYear());
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const safeName = sanitizeFilename(originalName);
+  const filename = `${randomUUID()}-${safeName}`;
+  const dirRel = `entregas/${year}/${month}/${String(entregaId)}`;
+  const relativePath = `${dirRel}/${filename}`;
+  const absolutePath = join(UPLOADS_ROOT, dirRel, filename);
+  return {
+    relativePath,
+    absolutePath,
+    filename,
+    dir: join(UPLOADS_ROOT, dirRel),
+  };
+}
+
+/**
+ * Middleware multer para subida de fotos de entrega. Lee hasta 10 archivos del
+ * field `fotos`. Tira 415 si el mimetype no es imagen, 413 si excede 10 MiB.
+ */
+export const fotoUpload = multer({
+  storage: fotoStorage,
+  fileFilter: fotoFileFilter,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10 MiB por archivo
+    files: 10, // hasta 10 fotos por request
+  },
+}).array('fotos', 10);

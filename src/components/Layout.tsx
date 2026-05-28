@@ -1,9 +1,9 @@
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   Home, Building2, Warehouse, Users, Package,
-  FileSearch, FileText, ClipboardList, CreditCard,
-  Receipt, Truck, TrendingUp, BarChart3,
-  Shield, Settings, Database,
+  FileText, ClipboardList, CreditCard,
+  Receipt, Truck, TrendingUp,
+  Shield,
   LogOut, Sun, Moon, HardHat,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -41,7 +41,6 @@ export default function Layout() {
     {
       title: 'Compras',
       items: [
-        { path: '/rfqs', icon: FileSearch, label: 'Solicitudes' },
         { path: '/cotizaciones', icon: FileText, label: 'Cotizaciones' },
         { path: '/ocs', icon: ClipboardList, label: 'Órdenes de compra' },
         { path: '/pagos', icon: CreditCard, label: 'Pagos' },
@@ -55,10 +54,9 @@ export default function Layout() {
       ],
     },
     {
-      title: 'Reportes',
+      title: 'Finanzas',
       items: [
         { path: '/tipo-cambio', icon: TrendingUp, label: 'Tipo de cambio' },
-        { path: '/reportes', icon: BarChart3, label: 'Reportes' },
       ],
     },
   ];
@@ -68,8 +66,6 @@ export default function Layout() {
       title: 'Sistema',
       items: [
         { path: '/usuarios', icon: Shield, label: 'Usuarios' },
-        { path: '/configuracion', icon: Settings, label: 'Configuración' },
-        { path: '/respaldos', icon: Database, label: 'Respaldos' },
       ],
     });
   }

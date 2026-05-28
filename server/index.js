@@ -9,11 +9,19 @@ BigInt.prototype.toJSON = function () { return Number(this); };
 import authRoutes from './routes/auth.routes.js';
 import obrasRoutes from './routes/obras.routes.js';
 import bodegasRoutes from './routes/bodegas.routes.js';
+import clientesRoutes from './routes/clientes.routes.js';
+import usersRoutes from './routes/users.routes.js';
 import proveedoresRoutes from './routes/proveedores.routes.js';
 import itemsCatalogoRoutes from './routes/items-catalogo.routes.js';
 import cotizacionesRoutes from './routes/cotizaciones.routes.js';
 import ocsRoutes from './routes/ocs.routes.js';
 import facturasRoutes from './routes/facturas.routes.js';
+import { pagosRouter, pagosOcRouter } from './routes/pagos.routes.js';
+import entregasRoutes, { entregasUnderOcs } from './routes/entregas.routes.js';
+import exchangeRatesRoutes from './routes/exchange-rates.routes.js';
+import auditLogRoutes from './routes/audit-log.routes.js';
+import { startBccrCron } from './cron/bccr-daily.js';
+import prisma from './db.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
 const app = express();
@@ -30,11 +38,19 @@ app.get('/api/health', (_req, res) => res.json({ ok: true }));
 app.use('/api/auth', authRoutes);
 app.use('/api/obras', obrasRoutes);
 app.use('/api/bodegas', bodegasRoutes);
+app.use('/api/clientes', clientesRoutes);
+app.use('/api/users', usersRoutes);
 app.use('/api/proveedores', proveedoresRoutes);
 app.use('/api/items-catalogo', itemsCatalogoRoutes);
 app.use('/api/cotizaciones', cotizacionesRoutes);
 app.use('/api/ocs', ocsRoutes);
+app.use('/api/ocs', pagosOcRouter);
+app.use('/api/ocs', entregasUnderOcs);
+app.use('/api/pagos', pagosRouter);
+app.use('/api/entregas', entregasRoutes);
 app.use('/api/facturas', facturasRoutes);
+app.use('/api/exchange-rates', exchangeRatesRoutes);
+app.use('/api/audit-log', auditLogRoutes);
 
 app.use((req, res, _next) => {
   res.status(404).json({ error: `Not found: ${req.method} ${req.originalUrl}` });
@@ -44,4 +60,5 @@ app.use(errorHandler);
 
 app.listen(PORT, () => {
   console.log(`[server] listening on http://localhost:${PORT}`);
+  startBccrCron(prisma);
 });
