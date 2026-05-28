@@ -14,6 +14,7 @@
     {% if user.is_authenticated %}
       <div class="flex gap-3 items-center text-sm">
         <span>{{ user.get_full_name|default:user.username }}</span>
+        <a href="{% url 'admin:password_change' %}" class="text-blue-600 hover:underline">Cambiar contraseña</a>
         <form method="post" action="{% url 'admin:logout' %}">{% csrf_token %}
           <button type="submit" class="text-blue-600">Salir</button>
         </form>
