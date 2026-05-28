@@ -7,27 +7,86 @@
   <title>{% block title %}ConstruMaster{% endblock %}</title>
   {% tailwind_css %}
   <script src="https://unpkg.com/htmx.org@2.0.9" defer></script>
+  <style>
+    html { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+    body { font-feature-settings: "cv02", "cv03", "cv04", "cv11"; }
+    table { font-variant-numeric: tabular-nums; }
+  </style>
 </head>
-<body class="bg-gray-50 text-gray-900 min-h-screen">
-  <nav class="bg-white shadow px-4 py-3 flex justify-between items-center">
-    <a href="/" class="font-bold text-lg">ConstruMaster</a>
-    {% if user.is_authenticated %}
-      <div class="flex gap-3 items-center text-sm">
-        <span>{{ user.get_full_name|default:user.username }}</span>
-        <a href="{% url 'admin:password_change' %}" class="text-blue-600 hover:underline">Cambiar contraseña</a>
-        <form method="post" action="{% url 'admin:logout' %}">{% csrf_token %}
-          <button type="submit" class="text-blue-600">Salir</button>
+<body class="bg-slate-50 text-slate-900 min-h-screen flex flex-col">
+
+{% if user.is_authenticated %}
+  {% with primary_group=user.groups.first %}
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-20">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center gap-6">
+      <a href="/" class="flex items-center gap-2 shrink-0">
+        <span class="inline-flex items-center justify-center w-7 h-7 rounded-md bg-indigo-600 text-white font-bold text-sm">C</span>
+        <span class="font-semibold tracking-tight">ConstruMaster</span>
+      </a>
+      <nav class="hidden md:flex items-center gap-1 text-sm font-medium text-slate-600">
+        <a href="/" class="px-3 py-1.5 rounded-md hover:bg-slate-100 hover:text-slate-900">Inicio</a>
+        <a href="/admin/core/obra/" class="px-3 py-1.5 rounded-md hover:bg-slate-100 hover:text-slate-900">Obras</a>
+        <a href="/admin/compras/cotizacion/" class="px-3 py-1.5 rounded-md hover:bg-slate-100 hover:text-slate-900">Cotizaciones</a>
+        <a href="/admin/compras/ordencompra/" class="px-3 py-1.5 rounded-md hover:bg-slate-100 hover:text-slate-900">Órdenes</a>
+        <a href="/admin/facturas/factura/" class="px-3 py-1.5 rounded-md hover:bg-slate-100 hover:text-slate-900">Facturas</a>
+        <a href="/admin/entregas/entrega/" class="px-3 py-1.5 rounded-md hover:bg-slate-100 hover:text-slate-900">Entregas</a>
+        <a href="/admin/catalogo/proveedor/" class="px-3 py-1.5 rounded-md hover:bg-slate-100 hover:text-slate-900">Proveedores</a>
+        <a href="{% url 'reportes:reporte_tipo_cambio' %}" class="px-3 py-1.5 rounded-md hover:bg-slate-100 hover:text-slate-900">Tipo de cambio</a>
+      </nav>
+      <div class="ml-auto flex items-center gap-3 text-sm">
+        <div class="hidden sm:flex flex-col items-end leading-tight">
+          <span class="font-medium text-slate-900">{{ user.get_full_name|default:user.username }}</span>
+          {% if primary_group %}
+            <span class="text-xs px-1.5 py-0.5 rounded
+              {% if primary_group.name == 'supervisor' %}bg-indigo-50 text-indigo-700
+              {% elif primary_group.name == 'operativo' %}bg-emerald-50 text-emerald-700
+              {% else %}bg-slate-100 text-slate-600{% endif %}">{{ primary_group.name }}</span>
+          {% endif %}
+        </div>
+        <a href="{% url 'admin:password_change' %}" class="text-slate-500 hover:text-slate-900" title="Cambiar contraseña">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7" r="4"/><path d="M5.5 21a6.5 6.5 0 0 1 13 0"/></svg>
+        </a>
+        <form method="post" action="{% url 'admin:logout' %}" class="inline">{% csrf_token %}
+          <button type="submit" class="text-slate-500 hover:text-red-600" title="Cerrar sesión">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 17l5-5-5-5"/><path d="M20 12H9"/><path d="M12 19H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h7"/></svg>
+          </button>
         </form>
       </div>
-    {% endif %}
-  </nav>
-  <main class="max-w-7xl mx-auto px-4 py-6">
-    {% if messages %}
+    </div>
+    <nav class="md:hidden border-t border-slate-200 px-4 py-2 flex gap-1 overflow-x-auto text-xs font-medium text-slate-600">
+      <a href="/" class="px-2 py-1 rounded hover:bg-slate-100">Inicio</a>
+      <a href="/admin/core/obra/" class="px-2 py-1 rounded hover:bg-slate-100">Obras</a>
+      <a href="/admin/compras/cotizacion/" class="px-2 py-1 rounded hover:bg-slate-100">Cot.</a>
+      <a href="/admin/compras/ordencompra/" class="px-2 py-1 rounded hover:bg-slate-100">OC</a>
+      <a href="/admin/facturas/factura/" class="px-2 py-1 rounded hover:bg-slate-100">Facturas</a>
+      <a href="/admin/entregas/entrega/" class="px-2 py-1 rounded hover:bg-slate-100">Entregas</a>
+      <a href="/admin/catalogo/proveedor/" class="px-2 py-1 rounded hover:bg-slate-100">Proveedores</a>
+    </nav>
+  </header>
+  {% endwith %}
+{% endif %}
+
+<main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8">
+  {% if messages %}
+    <div class="mb-4 space-y-2">
       {% for m in messages %}
-        <div class="mb-3 p-3 rounded {% if m.tags == 'error' %}bg-red-100{% else %}bg-blue-100{% endif %}">{{ m }}</div>
+        <div class="px-4 py-3 rounded-md text-sm border
+          {% if m.tags == 'error' %}bg-red-50 border-red-200 text-red-800
+          {% elif m.tags == 'success' %}bg-emerald-50 border-emerald-200 text-emerald-800
+          {% elif m.tags == 'warning' %}bg-amber-50 border-amber-200 text-amber-800
+          {% else %}bg-indigo-50 border-indigo-200 text-indigo-800{% endif %}">{{ m }}</div>
       {% endfor %}
-    {% endif %}
-    {% block content %}{% endblock %}
-  </main>
+    </div>
+  {% endif %}
+  {% block content %}{% endblock %}
+</main>
+
+<footer class="border-t border-slate-200 bg-white">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3 text-xs text-slate-500 flex justify-between">
+    <span>ConstruMaster — supervisión de obras</span>
+    <span>{{ user.username|default:"" }}</span>
+  </div>
+</footer>
+
 </body>
 </html>
