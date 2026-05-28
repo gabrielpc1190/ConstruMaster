@@ -159,7 +159,7 @@ def mark_pago_paid(pago, by, on: date_type):
             )
             pago.fx_rate_applied = fx
             pago.fx_rate_date = on
-        except (NoExchangeRateAvailable, Exception):
+        except NoExchangeRateAvailable:
             # Sin TC histórico: dejar None. El total_pagado en moneda mixta
             # quedará subreportado para esta línea pero no falla
             pass
@@ -182,7 +182,7 @@ def mark_pago_paid(pago, by, on: date_type):
         if monto.currency.code != target_ccy:
             try:
                 monto = convert(monto, target_ccy, p.fecha_realizada)
-            except (NoExchangeRateAvailable, Exception):
+            except NoExchangeRateAvailable:
                 # Si no hay TC para ese día, ignorar este pago en la suma
                 # (mejor underreport que blocking)
                 continue
@@ -234,7 +234,7 @@ def presupuesto_status(obra, categoria) -> dict | None:
         if monto.currency.code != target_ccy:
             try:
                 monto = convert(monto, target_ccy, oc.fx_rate_date or date_type.today())
-            except (NoExchangeRateAvailable, Exception):
+            except NoExchangeRateAvailable:
                 # Si no hay TC, ignorar esta OC en el cálculo (mejor underreport
                 # que blocking)
                 continue
