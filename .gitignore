@@ -21,6 +21,7 @@ env/
 htmlcov/
 .coverage
 .coverage.*
+*.egg-info/
 
 # Django
 *.log
