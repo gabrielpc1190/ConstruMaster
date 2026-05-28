@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: construmaster_v2_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: construmaster_v2
+      POSTGRES_USER: construmaster
+      POSTGRES_PASSWORD: 600161300834bf7472f5bd3e74366a80
+    ports:
+      - "5432:5432"
+    volumes:
+      - construmaster_v2_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U construmaster -d construmaster_v2"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  construmaster_v2_pgdata:
+    name: construmaster_v2_pgdata

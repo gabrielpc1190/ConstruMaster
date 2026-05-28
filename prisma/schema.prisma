@@ -1,0 +1,628 @@
+// ConstruMaster v2 — Prisma schema
+//
+// Money: dos columnas `<campo>Amount Decimal(15,2)` + `<campo>Currency` (enum Currency).
+// IDs: BigInt (= bigserial Postgres).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ===================== ENUMS =====================
+
+enum Role {
+  admin
+  supervisor
+  operativo
+  lector
+}
+
+enum Currency {
+  CRC
+  USD
+}
+
+enum ObraEstado {
+  planificada
+  en_curso
+  pausada
+  finalizada
+}
+
+enum ItemTipo {
+  material
+  servicio
+}
+
+enum ItemEstado {
+  pendiente
+  aprobado
+  inactivo
+}
+
+enum ItemUnidad {
+  saco
+  kg
+  m3
+  m2
+  m
+  unidad
+  varilla
+  galon
+  litro
+  hora
+  dia
+  visita
+  global
+  mes
+}
+
+enum ExchangeRateSource {
+  bccr
+  manual
+}
+
+enum RfqEstado {
+  abierta
+  cerrada
+  cancelada
+}
+
+enum CotizacionEstado {
+  recibida
+  en_revision
+  aprobada
+  rechazada
+  vencida
+}
+
+enum OcEstado {
+  autorizada
+  pagada_parcial
+  pagada
+  entregada_parcial
+  completada
+  cancelada
+}
+
+enum PagoMetodo {
+  transferencia
+  cheque
+  efectivo
+  tarjeta
+  otro
+}
+
+enum FacturaSourceType {
+  xml
+  pdf
+  imagen
+}
+
+enum FacturaTipo {
+  FE
+  TE
+  NC
+  ND
+  FEC
+  FEE
+}
+
+enum FacturaStatus {
+  pending
+  processing
+  extracted
+  confirmed
+  error
+}
+
+enum AuditAction {
+  create
+  update
+  delete
+}
+
+// ===================== AUTH =====================
+
+model User {
+  id           BigInt   @id @default(autoincrement())
+  username     String   @unique
+  passwordHash String   @map("password_hash")
+  fullName     String?  @map("full_name")
+  email        String?  @unique
+  role         Role     @default(operativo)
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  bodegasResponsable   Bodega[]              @relation("BodegaResponsable")
+  itemsSugeridos       ItemCatalogo[]        @relation("ItemSugeridoPor")
+  rfqsCreadas          SolicitudCotizacion[] @relation("RfqCreadaPor")
+  ocsAprobadas         OrdenCompra[]         @relation("OcAprobadaPor")
+  pagosRegistrados     Pago[]                @relation("PagoRegistradoPor")
+  pagosMarcados        Pago[]                @relation("PagoMarcadoPor")
+  facturasConfirmadas  Factura[]             @relation("FacturaConfirmadaPor")
+  entregasRegistradas  Entrega[]             @relation("EntregaRegistradaPor")
+  entregaFotosSubidas  EntregaFoto[]         @relation("EntregaFotoSubidaPor")
+  auditLogs            AuditLog[]
+
+  @@map("users")
+}
+
+// ===================== CORE =====================
+
+model Cliente {
+  id             BigInt   @id @default(autoincrement())
+  nombre         String   @db.VarChar(200)
+  identificacion String?  @db.VarChar(50)
+  notas          String?
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  obras   Obra[]
+  bodegas Bodega[]
+
+  @@index([nombre])
+  @@map("clientes")
+}
+
+model Obra {
+  id               BigInt     @id @default(autoincrement())
+  clienteId        BigInt     @map("cliente_id")
+  cliente          Cliente    @relation(fields: [clienteId], references: [id], onDelete: Restrict)
+  nombre           String     @db.VarChar(200)
+  slug             String     @unique @db.VarChar(80)
+  direccion        String?
+  fechaInicio      DateTime?  @map("fecha_inicio") @db.Date
+  fechaFinEstimada DateTime?  @map("fecha_fin_estimada") @db.Date
+  monedaReporte    Currency   @default(USD) @map("moneda_reporte")
+  estado           ObraEstado @default(planificada)
+  nextOcSeq        Int        @default(1) @map("next_oc_seq")
+  notas            String?
+  createdAt        DateTime   @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt        DateTime   @updatedAt @map("updated_at") @db.Timestamptz()
+
+  categorias   CategoriaPresupuesto[]
+  presupuestos Presupuesto[]
+  rfqs         SolicitudCotizacion[]
+  cotizaciones Cotizacion[]
+  ordenes      OrdenCompra[]
+
+  @@index([clienteId])
+  @@index([estado])
+  @@map("obras")
+}
+
+model CategoriaPresupuesto {
+  id        BigInt   @id @default(autoincrement())
+  obraId    BigInt   @map("obra_id")
+  obra      Obra     @relation(fields: [obraId], references: [id], onDelete: Cascade)
+  nombre    String   @db.VarChar(100)
+  orden     Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  presupuestos    Presupuesto[]
+  rfqs            SolicitudCotizacion[]
+  ordenes         OrdenCompra[]
+  itemsSugeridos  ItemCatalogo[]        @relation("CategoriaSugeridaItem")
+
+  @@unique([obraId, nombre])
+  @@index([obraId, orden])
+  @@map("categorias_presupuesto")
+}
+
+model Presupuesto {
+  id             BigInt   @id @default(autoincrement())
+  obraId         BigInt   @map("obra_id")
+  obra           Obra     @relation(fields: [obraId], references: [id], onDelete: Cascade)
+  categoriaId    BigInt   @map("categoria_id")
+  categoria      CategoriaPresupuesto @relation(fields: [categoriaId], references: [id], onDelete: Cascade)
+  montoAmount    Decimal  @map("monto_amount") @db.Decimal(15, 2)
+  montoCurrency  Currency @default(CRC) @map("monto_currency")
+  notas          String?
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  @@unique([obraId, categoriaId])
+  @@map("presupuestos")
+}
+
+model Bodega {
+  id            BigInt   @id @default(autoincrement())
+  clienteId     BigInt   @map("cliente_id")
+  cliente       Cliente  @relation(fields: [clienteId], references: [id], onDelete: Restrict)
+  nombre        String   @db.VarChar(120)
+  direccion     String?
+  responsableId BigInt?  @map("responsable_id")
+  responsable   User?    @relation("BodegaResponsable", fields: [responsableId], references: [id], onDelete: SetNull)
+  activo        Boolean  @default(true)
+  notas         String?
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  entregas Entrega[]
+
+  @@unique([clienteId, nombre])
+  @@index([clienteId])
+  @@map("bodegas")
+}
+
+// ===================== CATÁLOGO =====================
+
+model Proveedor {
+  id                BigInt   @id @default(autoincrement())
+  nombre            String   @db.VarChar(200)
+  identificacion    String?  @db.VarChar(20)
+  emailFacturacion  String?  @map("email_facturacion") @db.VarChar(254)
+  telefono          String?  @db.VarChar(30)
+  notas             String?
+  activo            Boolean  @default(true)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  cotizaciones Cotizacion[]
+  ordenes      OrdenCompra[]
+
+  @@index([nombre])
+  @@map("proveedores")
+}
+
+model ItemCatalogo {
+  id                  BigInt     @id @default(autoincrement())
+  tipo                ItemTipo
+  nombreCanonico      String     @map("nombre_canonico") @db.VarChar(200)
+  unidad              ItemUnidad
+  categoriaSugeridaId BigInt?    @map("categoria_sugerida_id")
+  categoriaSugerida   CategoriaPresupuesto? @relation("CategoriaSugeridaItem", fields: [categoriaSugeridaId], references: [id], onDelete: SetNull)
+  slug                String     @db.VarChar(220)
+  alias               String?
+  estado              ItemEstado @default(aprobado)
+  sugeridoPorId       BigInt?    @map("sugerido_por_id")
+  sugeridoPor         User?      @relation("ItemSugeridoPor", fields: [sugeridoPorId], references: [id], onDelete: SetNull)
+  activo              Boolean    @default(true)
+  createdAt           DateTime   @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt           DateTime   @updatedAt @map("updated_at") @db.Timestamptz()
+
+  cotizacionItems CotizacionItem[]
+  ordenItems      OrdenCompraItem[]
+  entregaItems    EntregaItem[]
+
+  @@index([estado])
+  @@index([tipo])
+  @@index([slug])
+  @@index([nombreCanonico])
+  @@map("items_catalogo")
+}
+
+// ===================== FINANCE =====================
+
+model ExchangeRate {
+  id        BigInt             @id @default(autoincrement())
+  currency  String             @db.VarChar(3)
+  date      DateTime           @db.Date
+  buy       Decimal            @db.Decimal(12, 5)
+  sell      Decimal            @db.Decimal(12, 5)
+  fetchedAt DateTime           @default(now()) @map("fetched_at") @db.Timestamptz()
+  source    ExchangeRateSource @default(bccr)
+
+  @@unique([currency, date])
+  @@index([currency, date(sort: Desc)])
+  @@map("exchange_rates")
+}
+
+// ===================== COMPRAS =====================
+
+model SolicitudCotizacion {
+  id              BigInt    @id @default(autoincrement())
+  obraId          BigInt    @map("obra_id")
+  obra            Obra      @relation(fields: [obraId], references: [id], onDelete: Restrict)
+  categoriaId     BigInt    @map("categoria_id")
+  categoria       CategoriaPresupuesto @relation(fields: [categoriaId], references: [id], onDelete: Restrict)
+  descripcion     String
+  fechaRequerida  DateTime? @map("fecha_requerida") @db.Date
+  creadaPorId     BigInt    @map("creada_por_id")
+  creadaPor       User      @relation("RfqCreadaPor", fields: [creadaPorId], references: [id], onDelete: Restrict)
+  estado          RfqEstado @default(abierta)
+  esEspecial      Boolean   @default(false) @map("es_especial")
+  notas           String?
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+
+  cotizaciones Cotizacion[]
+
+  @@index([obraId, estado])
+  @@map("solicitudes_cotizacion")
+}
+
+model Cotizacion {
+  id                 BigInt           @id @default(autoincrement())
+  obraId             BigInt           @map("obra_id")
+  obra               Obra             @relation(fields: [obraId], references: [id], onDelete: Restrict)
+  proveedorId        BigInt           @map("proveedor_id")
+  proveedor          Proveedor        @relation(fields: [proveedorId], references: [id], onDelete: Restrict)
+  rfqId              BigInt?          @map("rfq_id")
+  rfq                SolicitudCotizacion? @relation(fields: [rfqId], references: [id], onDelete: SetNull)
+  numeroCotizacion   String           @map("numero_cotizacion") @db.VarChar(80)
+  fecha              DateTime         @db.Date
+  fechaValidez       DateTime?        @map("fecha_validez") @db.Date
+  moneda             Currency         @default(CRC)
+  subtotalAmount     Decimal          @map("subtotal_amount") @db.Decimal(15, 2)
+  subtotalCurrency   Currency         @default(CRC) @map("subtotal_currency")
+  ivaAmount          Decimal          @map("iva_amount") @db.Decimal(15, 2)
+  ivaCurrency        Currency         @default(CRC) @map("iva_currency")
+  totalAmount        Decimal          @map("total_amount") @db.Decimal(15, 2)
+  totalCurrency      Currency         @default(CRC) @map("total_currency")
+  condicionesPago    String?          @map("condiciones_pago") @db.VarChar(200)
+  plazoEntregaDias   Int?             @map("plazo_entrega_dias")
+  pctAnticipo        Decimal?         @map("pct_anticipo") @db.Decimal(5, 2)
+  archivoPath        String?          @map("archivo_path")
+  esEspecial         Boolean          @default(false) @map("es_especial")
+  estado             CotizacionEstado @default(recibida)
+  notas              String?
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt          DateTime         @updatedAt @map("updated_at") @db.Timestamptz()
+
+  items CotizacionItem[]
+  ocs   OrdenCompra[]
+
+  @@index([obraId, estado])
+  @@index([proveedorId])
+  @@index([fecha(sort: Desc)])
+  @@map("cotizaciones")
+}
+
+model CotizacionItem {
+  id              BigInt        @id @default(autoincrement())
+  cotizacionId    BigInt        @map("cotizacion_id")
+  cotizacion      Cotizacion    @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
+  materialId      BigInt?       @map("material_id")
+  material        ItemCatalogo? @relation(fields: [materialId], references: [id], onDelete: SetNull)
+  descripcion     String        @db.VarChar(300)
+  cantidad        Decimal       @db.Decimal(12, 4)
+  unidad          String        @db.VarChar(20)
+  precioUnitario  Decimal       @map("precio_unitario") @db.Decimal(14, 5)
+  subtotal        Decimal       @db.Decimal(15, 2)
+  ivaMonto        Decimal       @default(0) @map("iva_monto") @db.Decimal(15, 2)
+  codigoCabys     String?       @map("codigo_cabys") @db.VarChar(13)
+  orden           Int           @default(0)
+
+  @@index([cotizacionId, orden])
+  @@index([materialId])
+  @@map("cotizacion_items")
+}
+
+model OrdenCompra {
+  id                 BigInt      @id @default(autoincrement())
+  obraId             BigInt      @map("obra_id")
+  obra               Obra        @relation(fields: [obraId], references: [id], onDelete: Restrict)
+  categoriaId        BigInt      @map("categoria_id")
+  categoria          CategoriaPresupuesto @relation(fields: [categoriaId], references: [id], onDelete: Restrict)
+  cotizacionOrigenId BigInt?     @map("cotizacion_origen_id")
+  cotizacionOrigen   Cotizacion? @relation(fields: [cotizacionOrigenId], references: [id], onDelete: SetNull)
+  proveedorId        BigInt      @map("proveedor_id")
+  proveedor          Proveedor   @relation(fields: [proveedorId], references: [id], onDelete: Restrict)
+  numeroOc           String      @unique @map("numero_oc") @db.VarChar(80)
+  fechaAprobacion    DateTime    @map("fecha_aprobacion") @db.Date
+  aprobadaPorId      BigInt?     @map("aprobada_por_id")
+  aprobadaPor        User?       @relation("OcAprobadaPor", fields: [aprobadaPorId], references: [id], onDelete: Restrict)
+  moneda             Currency    @default(CRC)
+  montoTotalAmount   Decimal     @map("monto_total_amount") @db.Decimal(15, 2)
+  montoTotalCurrency Currency    @default(CRC) @map("monto_total_currency")
+  fxRateApplied      Decimal?    @map("fx_rate_applied") @db.Decimal(12, 5)
+  fxRateDate         DateTime?   @map("fx_rate_date") @db.Date
+  esEspecial         Boolean     @default(false) @map("es_especial")
+  tiempoEstimadoDias Int?        @map("tiempo_estimado_dias")
+  pctAnticipo        Decimal?    @map("pct_anticipo") @db.Decimal(5, 2)
+  estado             OcEstado    @default(autorizada)
+  notas              String?
+  createdAt          DateTime    @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt          DateTime    @updatedAt @map("updated_at") @db.Timestamptz()
+
+  items     OrdenCompraItem[]
+  pagos     Pago[]
+  facturas  Factura[]
+  entregas  Entrega[]
+
+  @@index([obraId, estado])
+  @@index([proveedorId])
+  @@index([fechaAprobacion(sort: Desc)])
+  @@map("ordenes_compra")
+}
+
+model OrdenCompraItem {
+  id                       BigInt        @id @default(autoincrement())
+  ocId                     BigInt        @map("oc_id")
+  oc                       OrdenCompra   @relation(fields: [ocId], references: [id], onDelete: Cascade)
+  materialId               BigInt?       @map("material_id")
+  material                 ItemCatalogo? @relation(fields: [materialId], references: [id], onDelete: SetNull)
+  materialNombreSnapshot   String?       @map("material_nombre_snapshot") @db.VarChar(200)
+  materialUnidadSnapshot   String?       @map("material_unidad_snapshot") @db.VarChar(20)
+  descripcion              String        @db.VarChar(300)
+  cantidad                 Decimal       @db.Decimal(12, 4)
+  unidad                   String        @db.VarChar(20)
+  precioUnitario           Decimal       @map("precio_unitario") @db.Decimal(14, 5)
+  subtotal                 Decimal       @db.Decimal(15, 2)
+  ivaMonto                 Decimal       @default(0) @map("iva_monto") @db.Decimal(15, 2)
+  codigoCabys              String?       @map("codigo_cabys") @db.VarChar(13)
+  orden                    Int           @default(0)
+
+  hitos         Hito[]
+  entregaItems  EntregaItem[]
+
+  @@index([ocId, orden])
+  @@index([materialId])
+  @@map("orden_compra_items")
+}
+
+model Hito {
+  id               BigInt          @id @default(autoincrement())
+  ocItemId         BigInt          @map("oc_item_id")
+  ocItem           OrdenCompraItem @relation(fields: [ocItemId], references: [id], onDelete: Cascade)
+  nombre           String          @db.VarChar(200)
+  monto            Decimal?        @db.Decimal(15, 2)
+  fechaEstimada    DateTime?       @map("fecha_estimada") @db.Date
+  completado       Boolean         @default(false)
+  fechaCompletado  DateTime?       @map("fecha_completado") @db.Date
+  notas            String?
+  orden            Int             @default(0)
+  createdAt        DateTime        @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt        DateTime        @updatedAt @map("updated_at") @db.Timestamptz()
+
+  pagos PagoHito[]
+
+  @@index([ocItemId, orden])
+  @@map("hitos")
+}
+
+model Pago {
+  id                  BigInt      @id @default(autoincrement())
+  ocId                BigInt      @map("oc_id")
+  oc                  OrdenCompra @relation(fields: [ocId], references: [id], onDelete: Restrict)
+  fechaProgramada     DateTime    @map("fecha_programada") @db.Date
+  fechaRealizada      DateTime?   @map("fecha_realizada") @db.Date
+  montoAmount         Decimal     @map("monto_amount") @db.Decimal(15, 2)
+  montoCurrency       Currency    @default(CRC) @map("monto_currency")
+  metodo              PagoMetodo
+  referencia          String?     @db.VarChar(120)
+  comprobantePath     String?     @map("comprobante_path")
+  registradoPorId     BigInt?     @map("registrado_por_id")
+  registradoPor       User?       @relation("PagoRegistradoPor", fields: [registradoPorId], references: [id], onDelete: Restrict)
+  marcadoPagadoPorId  BigInt?     @map("marcado_pagado_por_id")
+  marcadoPagadoPor    User?       @relation("PagoMarcadoPor", fields: [marcadoPagadoPorId], references: [id], onDelete: Restrict)
+  fxRateApplied       Decimal?    @map("fx_rate_applied") @db.Decimal(12, 5)
+  fxRateDate          DateTime?   @map("fx_rate_date") @db.Date
+  notas               String?
+  createdAt           DateTime    @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt           DateTime    @updatedAt @map("updated_at") @db.Timestamptz()
+
+  hitosRelacionados PagoHito[]
+
+  @@index([ocId])
+  @@index([fechaProgramada(sort: Desc)])
+  @@map("pagos")
+}
+
+model PagoHito {
+  pagoId BigInt @map("pago_id")
+  pago   Pago   @relation(fields: [pagoId], references: [id], onDelete: Cascade)
+  hitoId BigInt @map("hito_id")
+  hito   Hito   @relation(fields: [hitoId], references: [id], onDelete: Cascade)
+
+  @@id([pagoId, hitoId])
+  @@map("pago_hitos")
+}
+
+// ===================== FACTURAS =====================
+
+model Factura {
+  id                  BigInt              @id @default(autoincrement())
+  ocId                BigInt              @map("oc_id")
+  oc                  OrdenCompra         @relation(fields: [ocId], references: [id], onDelete: Restrict)
+  sourceType          FacturaSourceType   @map("source_type")
+  tipoComprobante     FacturaTipo?        @map("tipo_comprobante")
+  archivoOriginalPath String              @map("archivo_original_path")
+  status              FacturaStatus       @default(pending)
+  extractedData       Json                @default("{}") @map("extracted_data")
+  confidenceScore     Float?              @map("confidence_score")
+  claveNumerica       String?             @map("clave_numerica") @db.VarChar(50)
+  numeroConsecutivo   String?             @map("numero_consecutivo") @db.VarChar(80)
+  fechaEmision        DateTime?           @map("fecha_emision") @db.Date
+  montoTotalAmount    Decimal?            @map("monto_total_amount") @db.Decimal(15, 2)
+  montoTotalCurrency  Currency?           @map("monto_total_currency")
+  condicionVenta      String?             @map("condicion_venta") @db.VarChar(2)
+  mediosPago          Json                @default("[]") @map("medios_pago")
+  fxRateApplied       Decimal?            @map("fx_rate_applied") @db.Decimal(12, 5)
+  fxRateDate          DateTime?           @map("fx_rate_date") @db.Date
+  confirmadaPorId     BigInt?             @map("confirmada_por_id")
+  confirmadaPor       User?               @relation("FacturaConfirmadaPor", fields: [confirmadaPorId], references: [id], onDelete: Restrict)
+  errorMessage        String?             @map("error_message")
+  notas               String?
+  createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt           DateTime            @updatedAt @map("updated_at") @db.Timestamptz()
+
+  // UNIQUE partial sobre clave_numerica WHERE NOT NULL: ver migration custom SQL.
+
+  @@index([ocId])
+  @@index([status])
+  @@index([claveNumerica])
+  @@map("facturas")
+}
+
+// ===================== ENTREGAS =====================
+
+model Entrega {
+  id              BigInt      @id @default(autoincrement())
+  ocId            BigInt      @map("oc_id")
+  oc              OrdenCompra @relation(fields: [ocId], references: [id], onDelete: Restrict)
+  bodegaDestinoId BigInt?     @map("bodega_destino_id")
+  bodegaDestino   Bodega?     @relation(fields: [bodegaDestinoId], references: [id], onDelete: SetNull)
+  fecha           DateTime    @db.Date
+  recibidoPor     String      @map("recibido_por") @db.VarChar(120)
+  registradaPorId BigInt      @map("registrada_por_id")
+  registradaPor   User        @relation("EntregaRegistradaPor", fields: [registradaPorId], references: [id], onDelete: Restrict)
+  completa        Boolean     @default(false)
+  notas           String?
+  createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt       DateTime    @updatedAt @map("updated_at") @db.Timestamptz()
+
+  items EntregaItem[]
+  fotos EntregaFoto[]
+
+  @@index([ocId, fecha(sort: Desc)])
+  @@map("entregas")
+}
+
+model EntregaItem {
+  id           BigInt           @id @default(autoincrement())
+  entregaId    BigInt           @map("entrega_id")
+  entrega      Entrega          @relation(fields: [entregaId], references: [id], onDelete: Cascade)
+  ocItemId     BigInt?          @map("oc_item_id")
+  ocItem       OrdenCompraItem? @relation(fields: [ocItemId], references: [id], onDelete: SetNull)
+  materialId   BigInt?          @map("material_id")
+  material     ItemCatalogo?    @relation(fields: [materialId], references: [id], onDelete: SetNull)
+  descripcion  String           @db.VarChar(300)
+  cantidad     Decimal          @db.Decimal(12, 4)
+  unidad       String           @db.VarChar(20)
+  notas        String?
+
+  @@index([entregaId])
+  @@index([ocItemId])
+  @@map("entrega_items")
+}
+
+model EntregaFoto {
+  id          BigInt   @id @default(autoincrement())
+  entregaId   BigInt   @map("entrega_id")
+  entrega     Entrega  @relation(fields: [entregaId], references: [id], onDelete: Cascade)
+  archivoPath String   @map("archivo_path")
+  subidaPorId BigInt   @map("subida_por_id")
+  subidaPor   User     @relation("EntregaFotoSubidaPor", fields: [subidaPorId], references: [id], onDelete: Restrict)
+  fecha       DateTime @default(now()) @db.Timestamptz()
+
+  @@index([entregaId, fecha(sort: Desc)])
+  @@map("entrega_fotos")
+}
+
+// ===================== AUDIT =====================
+
+model AuditLog {
+  id         BigInt      @id @default(autoincrement())
+  modelName  String      @map("model_name") @db.VarChar(80)
+  recordId   String      @map("record_id") @db.VarChar(40)
+  action     AuditAction
+  changes    Json        @default("{}")
+  userId     BigInt?     @map("user_id")
+  user       User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  ipAddress  String?     @map("ip_address") @db.VarChar(45)
+  createdAt  DateTime    @default(now()) @map("created_at") @db.Timestamptz()
+
+  @@index([modelName, recordId])
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc)])
+  @@map("audit_logs")
+}
