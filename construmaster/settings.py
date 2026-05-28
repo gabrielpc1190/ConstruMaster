@@ -12,6 +12,10 @@ ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=["localhost", "127.0.0.
 CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
 
 INSTALLED_APPS = [
+    # django-unfold must come BEFORE django.contrib.admin so its template overrides win
+    "unfold",
+    "unfold.contrib.filters",
+    "unfold.contrib.forms",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -167,3 +171,33 @@ TAILWIND_CLI_SRC_CSS = "src/css/input.css"
 TAILWIND_CLI_DIST_CSS = "css/tailwind.css"
 TAILWIND_CLI_USE_SYSTEM_BINARY = True
 TAILWIND_CLI_SYSTEM_BINARY_NAME = "tailwindcss"
+
+# django-unfold (modern admin theme, Tailwind-based)
+# Palette matches the webapp shell (indigo accent on slate background).
+UNFOLD = {
+    "SITE_TITLE": "ConstruMaster — Admin",
+    "SITE_HEADER": "ConstruMaster",
+    "SITE_SUBHEADER": "Mantenimiento",
+    "SITE_URL": "/",
+    "SHOW_HISTORY": True,
+    "SHOW_VIEW_ON_SITE": False,
+    "COLORS": {
+        "primary": {
+            "50":  "238 242 255",
+            "100": "224 231 255",
+            "200": "199 210 254",
+            "300": "165 180 252",
+            "400": "129 140 248",
+            "500": "99 102 241",
+            "600": "79 70 229",
+            "700": "67 56 202",
+            "800": "55 48 163",
+            "900": "49 46 129",
+            "950": "30 27 75",
+        },
+    },
+    "SIDEBAR": {
+        "show_search": True,
+        "show_all_applications": True,
+    },
+}

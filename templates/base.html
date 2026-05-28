@@ -25,13 +25,10 @@
       </a>
       <nav class="hidden md:flex items-center gap-1 text-sm font-medium text-slate-600">
         <a href="/" class="px-3 py-1.5 rounded-md hover:bg-slate-100 hover:text-slate-900">Inicio</a>
-        <a href="/admin/core/obra/" class="px-3 py-1.5 rounded-md hover:bg-slate-100 hover:text-slate-900">Obras</a>
-        <a href="/admin/compras/cotizacion/" class="px-3 py-1.5 rounded-md hover:bg-slate-100 hover:text-slate-900">Cotizaciones</a>
-        <a href="/admin/compras/ordencompra/" class="px-3 py-1.5 rounded-md hover:bg-slate-100 hover:text-slate-900">Órdenes</a>
-        <a href="/admin/facturas/factura/" class="px-3 py-1.5 rounded-md hover:bg-slate-100 hover:text-slate-900">Facturas</a>
-        <a href="/admin/entregas/entrega/" class="px-3 py-1.5 rounded-md hover:bg-slate-100 hover:text-slate-900">Entregas</a>
-        <a href="/admin/catalogo/proveedor/" class="px-3 py-1.5 rounded-md hover:bg-slate-100 hover:text-slate-900">Proveedores</a>
         <a href="{% url 'reportes:reporte_tipo_cambio' %}" class="px-3 py-1.5 rounded-md hover:bg-slate-100 hover:text-slate-900">Tipo de cambio</a>
+        {% if user.is_superuser %}
+          <a href="/admin/" class="px-3 py-1.5 rounded-md hover:bg-slate-100 hover:text-slate-900 text-slate-400" title="Mantenimiento (solo superusers)">Admin</a>
+        {% endif %}
       </nav>
       <div class="ml-auto flex items-center gap-3 text-sm">
         <div class="hidden sm:flex flex-col items-end leading-tight">
@@ -55,12 +52,10 @@
     </div>
     <nav class="md:hidden border-t border-slate-200 px-4 py-2 flex gap-1 overflow-x-auto text-xs font-medium text-slate-600">
       <a href="/" class="px-2 py-1 rounded hover:bg-slate-100">Inicio</a>
-      <a href="/admin/core/obra/" class="px-2 py-1 rounded hover:bg-slate-100">Obras</a>
-      <a href="/admin/compras/cotizacion/" class="px-2 py-1 rounded hover:bg-slate-100">Cot.</a>
-      <a href="/admin/compras/ordencompra/" class="px-2 py-1 rounded hover:bg-slate-100">OC</a>
-      <a href="/admin/facturas/factura/" class="px-2 py-1 rounded hover:bg-slate-100">Facturas</a>
-      <a href="/admin/entregas/entrega/" class="px-2 py-1 rounded hover:bg-slate-100">Entregas</a>
-      <a href="/admin/catalogo/proveedor/" class="px-2 py-1 rounded hover:bg-slate-100">Proveedores</a>
+      <a href="{% url 'reportes:reporte_tipo_cambio' %}" class="px-2 py-1 rounded hover:bg-slate-100">Tipo de cambio</a>
+      {% if user.is_superuser %}
+        <a href="/admin/" class="px-2 py-1 rounded hover:bg-slate-100 text-slate-400">Admin</a>
+      {% endif %}
     </nav>
   </header>
   {% endwith %}

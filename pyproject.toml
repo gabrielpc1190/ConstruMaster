@@ -10,6 +10,7 @@ dependencies = [
     "django-money>=3.6",
     "django-auditlog>=3.0",
     "django-environ>=0.11",
+    "django-unfold>=0.50",
     "psycopg[binary]>=3.2",
     "redis>=5.0",
     "gunicorn>=23.0",
