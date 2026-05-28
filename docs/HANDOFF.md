@@ -1,7 +1,11 @@
 # ConstruMaster — Handoff entre sesiones
 
-**Última actualización:** 2026-05-25 (sesión 1, antes del primer subagente)
+**Última actualización:** 2026-05-27 (post-MVP, post-push a GitHub)
 **Modo de trabajo:** Subagent-Driven Development (skill `superpowers:subagent-driven-development`)
+
+## Estado en una línea
+
+MVP completo (11 fases, 231 tests passing, 51 commits). Pusheado a https://github.com/gabrielpc1190/ConstruMaster. Secrets reales en `.env`, entrypoint guard activo. Falta: Cloudflare Tunnel token + deploy real en NAS + crear usuarios.
 
 ---
 
@@ -79,7 +83,7 @@ Si las tres pasan, el setup quedó OK y se puede proceder.
 | 10 — Dashboards + reportes | 4 | 3 dashboards por rol + exports CSV/PDF |
 | 11 — Deploy production | 3 | Backup sidecar + Cloudflare Tunnel + smoke E2E |
 
-**Estado actual:** Task 0.1 lista para arrancar. Ningún código escrito todavía.
+**Estado actual:** Las 11 fases completadas. 51 commits en `main`, pusheado a `origin` (GitHub). 231 tests passing. Quedan tareas operativas, no de implementación — ver "Pendientes" más abajo.
 
 ---
 
@@ -132,13 +136,32 @@ Documentadas en spec con explicación inline. Los más críticos para ejecución
 
 1. **`docker compose v5.1.4`** instalado en `/usr/local/lib/docker/cli-plugins/docker-compose` (download manual). El número `v5.1.4` parece raro — verificar `docker compose version` post-reinicio para confirmar que es la v2 de verdad. Si es v1, downgradear.
 
-2. **Repo `/mnt/NAS/ConstruMaster/` no es git todavía.** Task 0.1 ejecuta `git init`. Aún no hay remote en GitHub — se crea cuando se haga el primer push (probablemente al final de Fase 0 o más tarde según preferencia).
+2. **Repo en GitHub:** https://github.com/gabrielpc1190/ConstruMaster (privado/público según haya creado el user). Remote `origin` configurado vía SSH con `~/.ssh/private_rsa` (llave user-level del usuario, ya autorizada en cuenta `gabrielpc1190`). NO se usó deploy key por elección del user. Branch `main` trackeando `origin/main`.
 
 3. **`gemini-3.1-flash-lite` es preview, no GA.** El usuario aceptó usarlo con fallback a `gemini-2.5-flash-lite` si aparecen fallos. Decisión registrada en spec §7.2.
 
 4. **`ValideSuscripcion` del BCCR devuelve 500** — usar `GET /indicadoresEconomicos/318/series` con rango `[today-7d, today]` como smoke test alternativo. Documentado en plan Task 2.3.
 
 5. **NAS en NFS:** el proyecto vive en `/mnt/NAS/ConstruMaster/` que es Synology vía NFSv4.1. Docker volumes nombrados (no bind mounts) funcionan OK. Si aparecen problemas de file locks o ownership con Postgres, considerar mover a `/var/lib/docker/volumes/` y migrar sólo los archivos finales al NAS.
+
+---
+
+## Pendientes para la próxima sesión
+
+Orden recomendado por el especialista de diseño consultado el 2026-05-27:
+
+1. **Generar `CLOUDFLARED_TOKEN`** en dash.cloudflare.com → Zero Trust → Networks → Tunnels. Pegarlo en `.env`. Sin esto el servicio `cloudflared` entra en crash loop al usar `--profile production`.
+2. **Probar `docker compose --profile production up -d`** localmente, ya con el token real. Esto levanta cloudflared + backup sidecar; permite validar el stack completo antes del deploy en NAS.
+3. **Deploy en NAS Synology** (cuando la decisión esté tomada): `git pull` en el path del NAS, `docker compose --profile production up -d --build`, correr setup post-deploy (ver §3 del runbook abajo).
+4. **Crear 5 usuarios reales** en la DB del NAS (no en la local). Idealmente vía data migration idempotente o `manage.py createsuperuser` + asignación manual de grupos. Usuarios: `diana`/`gabriel` → `supervisor`; `tony`/`adrian` → `operativo`; `nicholas` → `lector`.
+5. **(Opcional) Mapear `backupdata` a NFS** del NAS para que los pg_dumps + tar de mediadata no queden en el mismo disco que la DB. Bloque NFS de ejemplo está en §5 del runbook abajo.
+
+### Deuda técnica conocida (no urgente)
+
+- **Dockerfile monolítico:** dev deps + Node.js en la imagen de prod (~200 MB extra). Multi-stage build cuando se ataque.
+- **Bind mounts `./apps`, `./docker`, etc. en compose:** prácticos en dev (hot-reload + persistencia de migraciones), pero en prod permitirían mutar entrypoints/código sin rebuild. Considerar `docker-compose.override.yml` para dev y dejar el `docker-compose.yml` con `COPY` puro para prod.
+- **`admin:logout` en `base.html`:** sin vistas de auth propias. Cuando se agreguen, migrar el botón Salir.
+- **Sin django-guardian:** los permisos son a nivel de modelo, no per-objeto. OK para MVP de un solo cliente; cuando entre un segundo cliente, hace falta scoping por `Obra`.
 
 ---
 
@@ -169,7 +192,7 @@ Documentadas en spec con explicación inline. Los más críticos para ejecución
 
 ### Pre-requisitos
 
-- `.env` con todos los secrets cargados (Gemini key, BCCR token, DJANGO_SECRET_KEY, POSTGRES_PASSWORD distinto a "CHANGEME", etc).
+- `.env` con todos los secrets cargados. **El entrypoint guard** (`docker/check-env.sh`, añadido 2026-05-27) aborta el arranque si `DJANGO_SECRET_KEY`, `POSTGRES_PASSWORD`, `DATABASE_URL`, `GEMINI_API_KEY` o `BCCR_TOKEN` están vacíos o contienen placeholders (`__GENERATE_ME__`, `CHANGEME`, `dev-insecure-change-me`, los strings de ejemplo). En `dev` actual del NAS local ya están todos con valores reales.
 - VM con Docker + docker compose v2.
 - (Opcional) cuenta de Cloudflare con dominio configurado.
 
