@@ -1,6 +1,8 @@
 #!/bin/bash
 set -e
 
+bash /app/docker/check-env.sh
+
 python manage.py migrate --noinput
 python manage.py tailwind build
 python manage.py collectstatic --noinput

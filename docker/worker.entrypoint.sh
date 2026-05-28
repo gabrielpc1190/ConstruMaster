@@ -1,6 +1,8 @@
 #!/bin/bash
 set -e
 
+bash /app/docker/check-env.sh
+
 # Wait for web container to finish initial Django migrations.
 # Polls for the django_q_task table — once it exists, all migrations
 # (including django-q2) have been applied.
