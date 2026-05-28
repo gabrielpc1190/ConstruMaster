@@ -193,7 +193,7 @@ export async function listFacturas(req, res) {
       },
       orderBy: { createdAt: 'desc' },
     });
-    return res.json({ items: facturas.map(facturaToJson) });
+    return res.json(facturas.map(facturaToJson));
   } catch (err) {
     console.error('[facturas.list] error:', err);
     return res.status(500).json({ error: 'Internal error' });

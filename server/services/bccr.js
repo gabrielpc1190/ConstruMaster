@@ -84,7 +84,13 @@ function getToken() {
  * Hace GET autenticado a un código de indicador.
  * Maneja errores HTTP leyendo el body antes de lanzar.
  *
- * @returns array de items crudos `{fecha, valor, estado}` (sin filtrar).
+ * Response real del BCCR:
+ *   {estado: bool, mensaje?: string,
+ *    datos: [{series: [{fecha, valorDatoPorPeriodo}]}]}
+ *
+ * Esta función lo desenvuelve a un array plano de
+ *   {fecha, valor}
+ * donde `valor` puede ser null (fin de semana, feriado, sin datos).
  */
 async function rawFetch(code, fechaInicio, fechaFin) {
   const token = getToken();
@@ -120,10 +126,25 @@ async function rawFetch(code, fechaInicio, fechaFin) {
   }
 
   const data = await res.json();
-  if (!Array.isArray(data)) {
-    throw new Error(`[bccr] unexpected response shape (expected array, got ${typeof data})`);
+
+  // Compat con la respuesta vieja (algunos endpoints SDDE devolvían array plano).
+  if (Array.isArray(data)) return data;
+
+  if (data && typeof data === 'object') {
+    if (data.estado === false) {
+      const msg = data.mensaje || 'BCCR returned estado=false';
+      throw new Error(`[bccr] ${msg}`);
+    }
+    const datos = Array.isArray(data.datos) ? data.datos : [];
+    if (datos.length === 0) return [];
+    const series = Array.isArray(datos[0]?.series) ? datos[0].series : [];
+    return series.map((s) => ({
+      fecha: s.fecha,
+      valor: s.valorDatoPorPeriodo,
+    }));
   }
-  return data;
+
+  throw new Error(`[bccr] unexpected response shape: ${typeof data}`);
 }
 
 /**
@@ -142,7 +163,8 @@ export async function fetchSeries(currency, fechaInicio, fechaFin, side) {
   const items = await rawFetch(code, fechaInicio, fechaFin);
 
   return items
-    .filter((item) => item && item.estado === true)
+    // valor === null en fines de semana / feriados → omitir.
+    .filter((item) => item && item.valor != null)
     .map((item) => ({
       date: normalizeDate(item.fecha),
       // El BCCR retorna `valor` como number; lo serializamos a string para
@@ -167,7 +189,7 @@ export async function valideSubscription() {
   sevenDaysAgo.setUTCDate(sevenDaysAgo.getUTCDate() - 7);
 
   const items = await rawFetch(318, sevenDaysAgo, today);
-  const validCount = items.filter((i) => i && i.estado === true).length;
+  const validCount = items.filter((i) => i && i.valor != null).length;
 
   const email = process.env.BCCR_EMAIL || undefined;
   console.log(`[bccr] valideSubscription ok (email=${email ?? 'n/a'}, samples=${validCount})`);

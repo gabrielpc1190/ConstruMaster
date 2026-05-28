@@ -214,7 +214,7 @@ export async function listEntregas(req, res) {
       },
       orderBy: [{ fecha: 'desc' }, { id: 'desc' }],
     });
-    return res.json({ items: rows.map(entregaToJson) });
+    return res.json(rows.map(entregaToJson));
   } catch (err) {
     console.error('[entregas.list] error:', err);
     return res.status(500).json({ error: 'Internal error' });
