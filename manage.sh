@@ -24,11 +24,38 @@ case "$1" in
       sleep 1
     done
 
+    # Si REDIS_URL está seteado en .env, arrancamos también el container redis
+    # y el worker en background. Si no, queda todo en sync mode (backwards compat).
+    if [ -f .env ] && grep -qE '^REDIS_URL=.+' .env 2>/dev/null; then
+      echo "Ensuring Redis is up..."
+      docker compose up -d redis > /dev/null
+      until docker compose ps redis --format '{{.Health}}' 2>/dev/null | grep -q healthy; do
+        sleep 1
+      done
+
+      echo "Starting factura worker..."
+      WORKER_LOG="$APP_DIR/worker.log"
+      nohup npx nodemon --watch server/queues --watch server/services --watch server/db.js server/queues/factura-worker.js > "$WORKER_LOG" 2>&1 &
+      echo "Worker logs: $WORKER_LOG"
+    else
+      echo -e "${YELLOW}REDIS_URL not configured — queue OFF (facturas inline).${NC}"
+    fi
+
     echo "Starting ConstruMaster dev server..."
     nohup npm run dev > "$LOG_FILE" 2>&1 &
     echo -e "${GREEN}Started. Logs: $LOG_FILE${NC}"
     echo "Frontend: http://localhost:8000"
     echo "Backend:  http://localhost:3001"
+    ;;
+
+  worker)
+    # Arranca SOLO el worker en foreground (útil para debug). El `start` general
+    # ya lo arranca en background si REDIS_URL está seteado.
+    if [ "$2" = "prod" ]; then
+      node server/queues/factura-worker.js
+    else
+      npx nodemon --watch server/queues --watch server/services --watch server/db.js server/queues/factura-worker.js
+    fi
     ;;
 
   stop)
@@ -38,6 +65,7 @@ case "$1" in
     pkill -f "npm run dev" 2>/dev/null
     pkill -f "vite" 2>/dev/null
     pkill -f "nodemon server/index.js" 2>/dev/null
+    pkill -f "factura-worker.js" 2>/dev/null
     echo -e "${GREEN}Stopped.${NC}"
     ;;
 
@@ -123,11 +151,12 @@ case "$1" in
     echo ""
     echo "Usage: $0 {command} [options]"
     echo ""
-    echo "  start              Start Postgres + dev server (frontend + backend)"
-    echo "  stop               Stop dev server"
+    echo "  start              Start Postgres (+ Redis + worker si REDIS_URL) + dev server"
+    echo "  stop               Stop dev server + worker"
     echo "  restart            Restart dev server"
     echo "  status             Show service status"
     echo "  logs               Tail dev.log"
+    echo "  worker [prod]      Run factura-worker in foreground (dev: with nodemon)"
     echo "  reset-admin <pwd>  Reset admin password"
     echo ""
     echo "  build-prod         Build the production Docker image"

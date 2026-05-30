@@ -4,6 +4,10 @@
 # on port 3001, fronted by Cloudflare Tunnel on the host (host -> 127.0.0.1:8000
 # -> container:3001). Postgres runs alongside on its own named volume that does
 # NOT collide with the dev compose stack.
+#
+# Redis + worker son OPT-IN: si REDIS_URL está seteado en `.env`, el `worker`
+# container procesa facturas async. Sin REDIS_URL, BullMQ no se inicializa y
+# el web server hace parsing inline (backwards compat con deploys previos).
 
 services:
   postgres:
@@ -22,6 +26,20 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    container_name: construmaster_v2_redis_prod
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - construmaster_v2_redisdata_prod:/data
+    # No port mapping — solo accesible desde la red de compose.
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   app:
     build:
       context: .
@@ -34,10 +52,16 @@ services:
       # Override DATABASE_URL host inside the compose network. The dev .env
       # points at localhost:5432, which would not resolve from the container.
       DATABASE_URL: postgres://construmaster:${POSTGRES_PASSWORD}@postgres:5432/construmaster_v2
+      # Override REDIS_URL para que apunte al service `redis` de compose.
+      # Si querés deshabilitar el path async en prod (rollback rápido), seteá
+      # REDIS_URL= vacío en el .env y la web va a procesar inline igual.
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       NODE_ENV: production
       PORT: "3001"
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     ports:
       # Cloudflare Tunnel on the host points at 127.0.0.1:8000 (same as the
@@ -54,8 +78,35 @@ services:
       retries: 3
       start_period: 15s
 
+  # Worker BullMQ — procesa facturas XML + OCR Gemini async. Reusa el mismo
+  # image que `app` (mismo Dockerfile) pero arranca `factura-worker.js` en lugar
+  # del web server. Comparte el volumen de uploads para leer los archivos
+  # subidos por el web server.
+  worker:
+    image: construmaster:prod
+    container_name: construmaster_v2_worker
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://construmaster:${POSTGRES_PASSWORD}@postgres:5432/construmaster_v2
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      NODE_ENV: production
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
+    command: ["node", "server/queues/factura-worker.js"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      app:
+        condition: service_started
+    volumes:
+      - construmaster_v2_uploads:/app/uploads
+
 volumes:
   construmaster_v2_pgdata_prod:
     name: construmaster_v2_pgdata_prod
+  construmaster_v2_redisdata_prod:
+    name: construmaster_v2_redisdata_prod
   construmaster_v2_uploads:
     name: construmaster_v2_uploads

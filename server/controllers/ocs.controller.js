@@ -13,6 +13,14 @@
  */
 import { z } from 'zod';
 import prisma from '../db.js';
+import { auditUpdate, getIp } from '../lib/audit.js';
+
+function safeAuditUpdate(args) {
+  return auditUpdate(prisma, args).catch((err) => console.error('[audit:ocs]', err));
+}
+function userIdFromReq(req) {
+  return req.user?.id != null ? BigInt(req.user.id) : null;
+}
 
 const ROLES_UPDATE = new Set(['admin', 'supervisor']);
 const ROLES_CANCEL = new Set(['admin']);
@@ -135,6 +143,15 @@ export async function updateOc(req, res) {
         categoria: true,
       },
     });
+    const { items: _u_i, proveedor: _u_p, obra: _u_o, categoria: _u_c, ...afterScalar } = updated;
+    safeAuditUpdate({
+      modelName: 'OrdenCompra',
+      recordId: String(updated.id),
+      before: existing,
+      after: afterScalar,
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
+    });
     return res.json(updated);
   } catch (err) {
     logErr('updateOc', err);
@@ -183,6 +200,16 @@ export async function cancelarOc(req, res) {
       data: { estado: 'cancelada', notas },
     });
     console.log(`[compras] OC ${id} cancelada`);
+    // Cancelación de OC = transición importante; auditamos como update.
+    const { _count: _ec, ...beforeScalar } = existing;
+    safeAuditUpdate({
+      modelName: 'OrdenCompra',
+      recordId: String(updated.id),
+      before: beforeScalar,
+      after: updated,
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
+    });
     return res.json(updated);
   } catch (err) {
     logErr('cancelarOc', err);

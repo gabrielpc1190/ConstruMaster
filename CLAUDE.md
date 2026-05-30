@@ -172,14 +172,14 @@ Costo aproximado: ~milésimas de dólar por documento OCR (~$0.30/mes en los vol
 
 ## Deuda técnica conocida
 
-- **AuditLog**: helpers `auditCreate/auditUpdate/auditDelete` + `diff()` + `getIp()` listos en `server/lib/audit.js` y testeados, pero **ningún controller los invoca todavía**. La tabla queda vacía y el endpoint `/api/audit-log` no retorna nada útil.
-- **SolicitudCotizacion (RFQ) end-to-end**: el modelo Prisma existe + enum `RfqEstado`, pero no hay controller, router ni UI para crear/gestionar RFQs formales (hoy las cotizaciones se cargan sin RFQ previo).
-- **OCR Gemini para facturas no-electrónicas**: `services/gemini-ocr.js` implementado + testeado, sin endpoint REST ni UI (sólo se usa el OCR de cotizaciones por ahora).
-- **Sin worker async** — facturas XML y OCR se procesan inline en el request HTTP.
-- **Sin validación XSD del XML** (limitación de `fast-xml-parser`).
-- **Reportes / dashboards avanzados**: `Dashboard.tsx` tiene 4 KPIs en vivo (obras activas, cotizaciones por aprobar, OCs autorizadas, facturas por confirmar) + listas de pendientes, pero sin gráficos ni reportes por período/proveedor/obra.
-- **Build de producción**: solo dev server. Falta multi-stage Dockerfile + serve estático con Express o nginx.
+- **rfqId prefill desde RfqDetail al CotizacionForm**: las dos páginas existen pero el form no consume todavía el `state.rfqId` que le pasamos desde "+ Cargar cotización de proveedor". El operativo digita el SC# manualmente.
+- **Worker async opcional**: BullMQ + ioredis instalados, queue en `server/queues/factura-queue.js`, processor compartido en `server/services/factura-processor.js`. Default **sync** (REDIS_URL vacío). Para activar async: setear `REDIS_URL` en `.env` + arrancar `./manage.sh worker` (dev) o el service `worker` de `docker-compose.prod.yml`.
+- **Validación XSD opt-in**: `XSD_VALIDATE=true` en `.env` activa validación con `xmllint-wasm` + los 6 XSDs de Hacienda v4.4 commiteados en `server/schemas/V4.4/`. Default off.
+- **UI BullMQ / dead-letter alerts**: sin `@bull-board`, sin alertas en fallos repetidos. Jobs fallidos quedan 7 días en Redis.
+- **Frontend polling de facturas async**: cuando el upload responde 202 (queue activa), el cliente no hace poll todavía — el usuario tiene que refrescar manualmente.
 - **Frontend tests**: sin runner configurado (verificación manual). Falta Vitest + RTL.
+- **CI/CD**: build de producción funciona local pero no hay pipeline automatizado.
+- **Observabilidad**: sin Prometheus/healthcheck externo en prod.
 
 ## Modelos Prisma (22)
 

@@ -21,6 +21,17 @@
  */
 import { z } from 'zod';
 import prisma from '../db.js';
+import { auditCreate, auditUpdate, getIp } from '../lib/audit.js';
+
+function safeAuditCreate(args) {
+  return auditCreate(prisma, args).catch((err) => console.error('[audit:rfqs]', err));
+}
+function safeAuditUpdate(args) {
+  return auditUpdate(prisma, args).catch((err) => console.error('[audit:rfqs]', err));
+}
+function userIdFromReq(req) {
+  return req.user?.id != null ? BigInt(req.user.id) : null;
+}
 
 // ---------------------------------------------------------------------------
 // Schemas
@@ -182,6 +193,14 @@ export async function createRfq(req, res) {
     });
 
     console.log(`[rfqs] SC creada id=${created.id} obra=${obraId} categoria=${categoriaId}`);
+    const { obra: _co, categoria: _cc, creadaPor: _ccp, _count: _ccount, ...createdScalar } = created;
+    safeAuditCreate({
+      modelName: 'SolicitudCotizacion',
+      recordId: String(created.id),
+      data: createdScalar,
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
+    });
     return res.status(201).json(created);
   } catch (err) {
     logHandlerError('createRfq', err);
@@ -221,6 +240,15 @@ export async function updateRfq(req, res) {
       where: { id },
       data: payload,
       include: LIST_INCLUDE,
+    });
+    const { obra: _uo, categoria: _uc, creadaPor: _ucp, _count: _ucount, ...afterScalar } = updated;
+    safeAuditUpdate({
+      modelName: 'SolicitudCotizacion',
+      recordId: String(updated.id),
+      before: existing,
+      after: afterScalar,
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
     });
     return res.json(updated);
   } catch (err) {
@@ -281,6 +309,16 @@ export async function cancelRfq(req, res) {
       include: LIST_INCLUDE,
     });
     console.log(`[rfqs] SC ${id} cancelada`);
+    const { cotizaciones: _xc, ...beforeScalar } = existing;
+    const { obra: _co, categoria: _cc, creadaPor: _ccp, _count: _ccount, ...afterScalar } = updated;
+    safeAuditUpdate({
+      modelName: 'SolicitudCotizacion',
+      recordId: String(updated.id),
+      before: beforeScalar,
+      after: afterScalar,
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
+    });
     return res.json(updated);
   } catch (err) {
     logHandlerError('cancelRfq', err);

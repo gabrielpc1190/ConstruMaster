@@ -26,6 +26,7 @@ import reportesRoutes from './routes/reportes.routes.js';
 import { startBccrCron } from './cron/bccr-daily.js';
 import prisma from './db.js';
 import { errorHandler } from './middleware/errorHandler.js';
+import { isQueueReady } from './queues/factura-queue.js';
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
@@ -79,5 +80,12 @@ app.use(errorHandler);
 
 app.listen(PORT, () => {
   console.log(`[server] listening on http://localhost:${PORT}`);
+  // El estado real de Redis es asíncrono (el 'ready' del ioredis llega después).
+  // Acá solo reportamos si la queue se inicializó (es decir, si REDIS_URL está).
+  // Si la queue está inicializada pero Redis aún no respondió, el log dirá
+  // "redis missing" — se actualiza correctamente en el primer 'ready' event.
+  // En modo sync (REDIS_URL vacío) confirmamos que las facturas se procesan inline.
+  const hasRedisUrl = Boolean(process.env.REDIS_URL && process.env.REDIS_URL.trim());
+  console.log(`[server] queue: ${hasRedisUrl ? (isQueueReady() ? 'redis ok' : 'redis configured (connecting)') : 'redis missing (sync mode)'}`);
   startBccrCron(prisma);
 });

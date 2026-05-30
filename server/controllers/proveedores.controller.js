@@ -13,6 +13,20 @@
 
 import { z } from 'zod';
 import prisma from '../db.js';
+import { auditCreate, auditUpdate, auditDelete, getIp } from '../lib/audit.js';
+
+function safeAuditCreate(args) {
+  return auditCreate(prisma, args).catch((err) => console.error('[audit:proveedores]', err));
+}
+function safeAuditUpdate(args) {
+  return auditUpdate(prisma, args).catch((err) => console.error('[audit:proveedores]', err));
+}
+function safeAuditDelete(args) {
+  return auditDelete(prisma, args).catch((err) => console.error('[audit:proveedores]', err));
+}
+function userIdFromReq(req) {
+  return req.user?.id != null ? BigInt(req.user.id) : null;
+}
 
 // --- Schemas ---------------------------------------------------------------
 
@@ -116,6 +130,13 @@ export async function createProveedor(req, res) {
         notas: parsed.data.notas ?? null,
       },
     });
+    safeAuditCreate({
+      modelName: 'Proveedor',
+      recordId: String(created.id),
+      data: created,
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
+    });
     return res.status(201).json(serialize(created));
   } catch (err) {
     console.error('[proveedores.create] unexpected error:', err);
@@ -146,6 +167,14 @@ export async function updateProveedor(req, res) {
       where: { id: BigInt(id) },
       data,
     });
+    safeAuditUpdate({
+      modelName: 'Proveedor',
+      recordId: String(updated.id),
+      before: existing,
+      after: updated,
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
+    });
     return res.json(serialize(updated));
   } catch (err) {
     console.error('[proveedores.update] unexpected error:', err);
@@ -165,6 +194,13 @@ export async function deleteProveedor(req, res) {
     const updated = await prisma.proveedor.update({
       where: { id: BigInt(id) },
       data: { activo: false },
+    });
+    safeAuditDelete({
+      modelName: 'Proveedor',
+      recordId: String(updated.id),
+      snapshot: existing,
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
     });
     return res.json(serialize(updated));
   } catch (err) {

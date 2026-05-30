@@ -23,6 +23,20 @@
 import { z } from 'zod';
 import prisma from '../db.js';
 import { markPaid, unmarkPaid } from '../services/pago-flow.js';
+import { auditCreate, auditUpdate, auditDelete, getIp } from '../lib/audit.js';
+
+function safeAuditCreate(args) {
+  return auditCreate(prisma, args).catch((err) => console.error('[audit:pagos]', err));
+}
+function safeAuditUpdate(args) {
+  return auditUpdate(prisma, args).catch((err) => console.error('[audit:pagos]', err));
+}
+function safeAuditDelete(args) {
+  return auditDelete(prisma, args).catch((err) => console.error('[audit:pagos]', err));
+}
+function userIdFromReq(req) {
+  return req.user?.id != null ? BigInt(req.user.id) : null;
+}
 
 // ---------------------------------------------------------------------------
 // Roles
@@ -287,6 +301,14 @@ export async function createPago(req, res) {
     });
 
     console.log(`[compras] pago creado id=${created.id} ocId=${ocId} ${data.monto.amount} ${data.monto.currency}`);
+    const { oc: _co, hitosRelacionados: hitos, ...createdScalar } = created;
+    safeAuditCreate({
+      modelName: 'Pago',
+      recordId: String(created.id),
+      data: { ...createdScalar, hitoIds: (hitos || []).map((h) => Number(h.hitoId)) },
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
+    });
     return res.status(201).json(created);
   } catch (err) {
     logErr('createPago', err);
@@ -370,6 +392,15 @@ export async function updatePago(req, res) {
         },
       });
     });
+    const { oc: _u_o, hitosRelacionados: _u_h, ...afterScalar } = updated;
+    safeAuditUpdate({
+      modelName: 'Pago',
+      recordId: String(updated.id),
+      before: existing,
+      after: afterScalar,
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
+    });
     return res.json(updated);
   } catch (err) {
     logErr('updatePago', err);
@@ -397,6 +428,13 @@ export async function deletePago(req, res) {
       await tx.pagoHito.deleteMany({ where: { pagoId: id } });
       await tx.pago.delete({ where: { id } });
     });
+    safeAuditDelete({
+      modelName: 'Pago',
+      recordId: String(existing.id),
+      snapshot: existing,
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
+    });
     return res.status(204).end();
   } catch (err) {
     logErr('deletePago', err);
@@ -419,11 +457,39 @@ export async function marcarPagado(req, res) {
     const { fechaRealizada } = parsed.data;
     const marcadoPorId = req.user?.id != null ? toBig(req.user.id) : null;
 
+    // Snapshots pre-transición para auditar tanto el pago como la OC.
+    const beforePago = await prisma.pago.findUnique({ where: { id } });
+    const beforeOc = beforePago
+      ? await prisma.ordenCompra.findUnique({ where: { id: beforePago.ocId } })
+      : null;
+
     const result = await markPaid(prisma, {
       pagoId: id,
       fechaRealizada,
       marcadoPorId,
     });
+
+    if (beforePago && result.pago) {
+      safeAuditUpdate({
+        modelName: 'Pago',
+        recordId: String(result.pago.id),
+        before: beforePago,
+        after: result.pago,
+        userId: userIdFromReq(req),
+        ipAddress: getIp(req),
+      });
+    }
+    // Si la OC cambió de estado financiero, auditamos el cambio también.
+    if (beforeOc && result.oc && result.transitionedTo) {
+      safeAuditUpdate({
+        modelName: 'OrdenCompra',
+        recordId: String(result.oc.id),
+        before: beforeOc,
+        after: result.oc,
+        userId: userIdFromReq(req),
+        ipAddress: getIp(req),
+      });
+    }
     return res.json(result);
   } catch (err) {
     if (err.status && err.status < 500) {
@@ -445,7 +511,33 @@ export async function desmarcarPagado(req, res) {
     const id = toBig(req.params.id);
     if (id == null) return bad(res, 'id inválido', 400);
 
+    const beforePago = await prisma.pago.findUnique({ where: { id } });
+    const beforeOc = beforePago
+      ? await prisma.ordenCompra.findUnique({ where: { id: beforePago.ocId } })
+      : null;
+
     const result = await unmarkPaid(prisma, { pagoId: id });
+
+    if (beforePago && result.pago) {
+      safeAuditUpdate({
+        modelName: 'Pago',
+        recordId: String(result.pago.id),
+        before: beforePago,
+        after: result.pago,
+        userId: userIdFromReq(req),
+        ipAddress: getIp(req),
+      });
+    }
+    if (beforeOc && result.oc && result.transitionedTo) {
+      safeAuditUpdate({
+        modelName: 'OrdenCompra',
+        recordId: String(result.oc.id),
+        before: beforeOc,
+        after: result.oc,
+        userId: userIdFromReq(req),
+        ipAddress: getIp(req),
+      });
+    }
     return res.json(result);
   } catch (err) {
     if (err.status && err.status < 500) {
@@ -530,6 +622,13 @@ export async function createHito(req, res) {
         notas: data.notas ?? null,
       },
     });
+    safeAuditCreate({
+      modelName: 'Hito',
+      recordId: String(hito.id),
+      data: hito,
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
+    });
     return res.status(201).json(hito);
   } catch (err) {
     logErr('createHito', err);
@@ -562,6 +661,14 @@ export async function updateHito(req, res) {
     if (data.notas !== undefined) payload.notas = data.notas;
 
     const updated = await prisma.hito.update({ where: { id: hitoId }, data: payload });
+    safeAuditUpdate({
+      modelName: 'Hito',
+      recordId: String(updated.id),
+      before: existing,
+      after: updated,
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
+    });
     return res.json(updated);
   } catch (err) {
     logErr('updateHito', err);
@@ -588,6 +695,14 @@ export async function completarHito(req, res) {
     const updated = await prisma.hito.update({
       where: { id: hitoId },
       data: { completado: true, fechaCompletado: now },
+    });
+    safeAuditUpdate({
+      modelName: 'Hito',
+      recordId: String(updated.id),
+      before: existing,
+      after: updated,
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
     });
     return res.json(updated);
   } catch (err) {

@@ -11,6 +11,24 @@ import { z } from 'zod';
 
 import prisma from '../db.js';
 import { slugify, uniqueSlug } from '../lib/slug.js';
+import { auditCreate, auditUpdate, auditDelete, getIp } from '../lib/audit.js';
+
+// ===================== Audit wrappers =====================
+// Los helpers de audit.js tiran si Prisma falla o si falta modelName.
+// Wrappers locales: nunca propagan el error al handler (rule #4 de la spec).
+function safeAuditCreate(args) {
+  return auditCreate(prisma, args).catch((err) => console.error('[audit:obras]', err));
+}
+function safeAuditUpdate(args) {
+  return auditUpdate(prisma, args).catch((err) => console.error('[audit:obras]', err));
+}
+function safeAuditDelete(args) {
+  return auditDelete(prisma, args).catch((err) => console.error('[audit:obras]', err));
+}
+
+function userIdFromReq(req) {
+  return req.user?.id != null ? BigInt(req.user.id) : null;
+}
 
 // ===================== Helpers =====================
 
@@ -224,6 +242,13 @@ export async function createObra(req, res) {
     });
 
     console.log('[obras] create id=%s slug=%s nombre=%s', created.id, created.slug, created.nombre);
+    safeAuditCreate({
+      modelName: 'Obra',
+      recordId: String(created.id),
+      data: created,
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
+    });
     return res.status(201).json(serializeObra(created));
   } catch (err) {
     if (err.status === 400) return res.status(400).json({ error: err.message });
@@ -285,10 +310,21 @@ export async function updateObra(req, res) {
     if (data.estado !== undefined) update.estado = data.estado;
     if (data.notas !== undefined) update.notas = data.notas;
 
+    const before = await prisma.obra.findUnique({ where: { id } });
+    if (!before) return res.status(404).json({ error: 'Obra no encontrada' });
+
     const updated = await prisma.obra.update({
       where: { id },
       data: update,
       include: { cliente: { select: { id: true, nombre: true } } },
+    });
+    safeAuditUpdate({
+      modelName: 'Obra',
+      recordId: String(updated.id),
+      before,
+      after: updated,
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
     });
     return res.json(serializeObra(updated));
   } catch (err) {
@@ -324,6 +360,14 @@ export async function deleteObra(req, res) {
       include: { cliente: { select: { id: true, nombre: true } } },
     });
     console.log('[obras] delete-soft id=%s slug=%s', updated.id, updated.slug);
+    // Soft-delete → auditamos como 'delete' con snapshot pre-cambio.
+    safeAuditDelete({
+      modelName: 'Obra',
+      recordId: String(updated.id),
+      snapshot: existing,
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
+    });
     return res.json({ ok: true, obra: serializeObra(updated) });
   } catch (err) {
     console.error('[obras.delete] error:', err);
@@ -372,6 +416,13 @@ export async function createCategoria(req, res) {
       },
     });
     console.log('[obras] categoria.create id=%s obraId=%s nombre=%s', created.id, obraId, created.nombre);
+    safeAuditCreate({
+      modelName: 'CategoriaPresupuesto',
+      recordId: String(created.id),
+      data: created,
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
+    });
     return res.status(201).json(serializeCategoria(created));
   } catch (err) {
     if (err.code === 'P2002') {
@@ -395,9 +446,20 @@ export async function updateCategoria(req, res) {
     if (data.nombre !== undefined) update.nombre = data.nombre;
     if (data.orden !== undefined) update.orden = data.orden;
 
+    const before = await prisma.categoriaPresupuesto.findUnique({ where: { id: catId } });
+    if (!before) return res.status(404).json({ error: 'Categoría no encontrada' });
+
     const updated = await prisma.categoriaPresupuesto.update({
       where: { id: catId },
       data: update,
+    });
+    safeAuditUpdate({
+      modelName: 'CategoriaPresupuesto',
+      recordId: String(updated.id),
+      before,
+      after: updated,
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
     });
     return res.json(serializeCategoria(updated));
   } catch (err) {
@@ -415,8 +477,18 @@ export async function deleteCategoria(req, res) {
     const catId = toBigIntOrNull(req.params.catId);
     if (catId === null) return res.status(400).json({ error: 'Invalid categoria id' });
 
+    const snapshot = await prisma.categoriaPresupuesto.findUnique({ where: { id: catId } });
     await prisma.categoriaPresupuesto.delete({ where: { id: catId } });
     console.log('[obras] categoria.delete id=%s', catId);
+    if (snapshot) {
+      safeAuditDelete({
+        modelName: 'CategoriaPresupuesto',
+        recordId: String(snapshot.id),
+        snapshot,
+        userId: userIdFromReq(req),
+        ipAddress: getIp(req),
+      });
+    }
     return res.json({ ok: true });
   } catch (err) {
     if (err.code === 'P2025') return res.status(404).json({ error: 'Categoría no encontrada' });
@@ -495,6 +567,24 @@ export async function createPresupuesto(req, res) {
       '[obras] presupuesto.upsert id=%s obraId=%s catId=%s monto=%s %s',
       row.id, obraId, categoriaId, upsertData.montoAmount, upsertData.montoCurrency,
     );
+    if (existing) {
+      safeAuditUpdate({
+        modelName: 'Presupuesto',
+        recordId: String(row.id),
+        before: existing,
+        after: row,
+        userId: userIdFromReq(req),
+        ipAddress: getIp(req),
+      });
+    } else {
+      safeAuditCreate({
+        modelName: 'Presupuesto',
+        recordId: String(row.id),
+        data: row,
+        userId: userIdFromReq(req),
+        ipAddress: getIp(req),
+      });
+    }
     return res.status(existing ? 200 : 201).json(serializePresupuesto(row));
   } catch (err) {
     console.error('[obras.presupuestos.create] error:', err);
@@ -518,10 +608,21 @@ export async function updatePresupuesto(req, res) {
     }
     if (data.notas !== undefined) update.notas = data.notas;
 
+    const before = await prisma.presupuesto.findUnique({ where: { id: pId } });
+    if (!before) return res.status(404).json({ error: 'Presupuesto no encontrado' });
+
     const updated = await prisma.presupuesto.update({
       where: { id: pId },
       data: update,
       include: { categoria: true },
+    });
+    safeAuditUpdate({
+      modelName: 'Presupuesto',
+      recordId: String(updated.id),
+      before,
+      after: updated,
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
     });
     return res.json(serializePresupuesto(updated));
   } catch (err) {
@@ -536,8 +637,18 @@ export async function deletePresupuesto(req, res) {
     const pId = toBigIntOrNull(req.params.pId);
     if (pId === null) return res.status(400).json({ error: 'Invalid presupuesto id' });
 
+    const snapshot = await prisma.presupuesto.findUnique({ where: { id: pId } });
     await prisma.presupuesto.delete({ where: { id: pId } });
     console.log('[obras] presupuesto.delete id=%s', pId);
+    if (snapshot) {
+      safeAuditDelete({
+        modelName: 'Presupuesto',
+        recordId: String(snapshot.id),
+        snapshot,
+        userId: userIdFromReq(req),
+        ipAddress: getIp(req),
+      });
+    }
     return res.json({ ok: true });
   } catch (err) {
     if (err.code === 'P2025') return res.status(404).json({ error: 'Presupuesto no encontrado' });

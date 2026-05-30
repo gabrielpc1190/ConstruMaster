@@ -20,6 +20,17 @@ import { z } from 'zod';
 import prisma from '../db.js';
 import { approveCotizacion } from '../services/oc-flow.js';
 import { absoluteFromUploads, relativeToUploads } from '../lib/uploads.js';
+import { auditCreate, auditUpdate, getIp } from '../lib/audit.js';
+
+function safeAuditCreate(args) {
+  return auditCreate(prisma, args).catch((err) => console.error('[audit:cotizaciones]', err));
+}
+function safeAuditUpdate(args) {
+  return auditUpdate(prisma, args).catch((err) => console.error('[audit:cotizaciones]', err));
+}
+function userIdFromReq(req) {
+  return req.user?.id != null ? BigInt(req.user.id) : null;
+}
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -275,6 +286,24 @@ export async function createCotizacion(req, res) {
     });
 
     console.log(`[compras] cotizacion creada id=${created.id} (${data.items.length} items)`);
+    safeAuditCreate({
+      modelName: 'Cotizacion',
+      recordId: String(created.id),
+      data: {
+        obraId: created.obraId,
+        proveedorId: created.proveedorId,
+        rfqId: created.rfqId,
+        numeroCotizacion: created.numeroCotizacion,
+        fecha: created.fecha,
+        moneda: created.moneda,
+        totalAmount: created.totalAmount,
+        totalCurrency: created.totalCurrency,
+        estado: created.estado,
+        itemsCount: created.items?.length ?? 0,
+      },
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
+    });
     return res.status(201).json(created);
   } catch (err) {
     logHandlerError('createCotizacion', err);
@@ -329,6 +358,16 @@ export async function updateCotizacion(req, res) {
       data: payload,
       include: { items: { orderBy: { orden: 'asc' } }, proveedor: true, obra: true },
     });
+    // Excluimos relaciones del diff para no llenar el changes con objetos grandes.
+    const { items: _ai, proveedor: _ap, obra: _ao, ...afterScalar } = updated;
+    safeAuditUpdate({
+      modelName: 'Cotizacion',
+      recordId: String(updated.id),
+      before: existing,
+      after: afterScalar,
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
+    });
     return res.json(updated);
   } catch (err) {
     logHandlerError('updateCotizacion', err);
@@ -350,12 +389,36 @@ export async function aprobarCotizacion(req, res) {
     }
 
     const { categoriaId, fechaAprobacion } = parsed.data;
+    // Snapshot pre-aprobación para auditar la transición de la cotización.
+    const beforeCot = await prisma.cotizacion.findUnique({ where: { id } });
     const result = await approveCotizacion(prisma, {
       cotizacionId: id,
       categoriaId,
       fechaAprobacion: fechaAprobacion ?? null,
       approverId: req.user?.id ?? null,
     });
+    // Audit FUERA de la tx (rule #6): si falla, el negocio ya está commiteado.
+    if (beforeCot && result.cotizacion) {
+      const { items: _ci, proveedor: _cp, obra: _co, ...afterCotScalar } = result.cotizacion;
+      safeAuditUpdate({
+        modelName: 'Cotizacion',
+        recordId: String(result.cotizacion.id),
+        before: beforeCot,
+        after: afterCotScalar,
+        userId: userIdFromReq(req),
+        ipAddress: getIp(req),
+      });
+    }
+    if (result.oc) {
+      const { items: _oi, proveedor: _op, obra: _oo, categoria: _oc, ...ocScalar } = result.oc;
+      safeAuditCreate({
+        modelName: 'OrdenCompra',
+        recordId: String(result.oc.id),
+        data: ocScalar,
+        userId: userIdFromReq(req),
+        ipAddress: getIp(req),
+      });
+    }
     return res.status(201).json(result);
   } catch (err) {
     if (err.code === 'COTIZACION_TERMINAL') {
@@ -482,6 +545,14 @@ export async function uploadArchivoCotizacion(req, res) {
     }
 
     console.log(`[compras] cotizacion ${id} archivo subido (${relPath})`);
+    safeAuditUpdate({
+      modelName: 'Cotizacion',
+      recordId: String(id),
+      before: { archivoPath: existing.archivoPath },
+      after: { archivoPath: updated.archivoPath },
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
+    });
     return res.status(200).json({
       ok: true,
       archivoPath: updated.archivoPath,
@@ -587,6 +658,14 @@ export async function deleteArchivoCotizacion(req, res) {
     if (absPath) await safeUnlink(absPath);
 
     console.log(`[compras] cotizacion ${id} archivo eliminado`);
+    safeAuditUpdate({
+      modelName: 'Cotizacion',
+      recordId: String(id),
+      before: { archivoPath: existing.archivoPath },
+      after: { archivoPath: null },
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
+    });
     return res.json({ ok: true, archivoPath: null });
   } catch (err) {
     logHandlerError('deleteArchivoCotizacion', err);
@@ -626,6 +705,15 @@ export async function rechazarCotizacion(req, res) {
       include: { items: { orderBy: { orden: 'asc' } }, proveedor: true, obra: true },
     });
     console.log(`[compras] cotizacion ${id} rechazada`);
+    const { items: _ri, proveedor: _rp, obra: _ro, ...afterScalar } = updated;
+    safeAuditUpdate({
+      modelName: 'Cotizacion',
+      recordId: String(updated.id),
+      before: existing,
+      after: afterScalar,
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
+    });
     return res.json(updated);
   } catch (err) {
     logHandlerError('rechazarCotizacion', err);

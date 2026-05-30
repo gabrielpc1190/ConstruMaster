@@ -3,6 +3,17 @@ import { z } from 'zod';
 import prisma from '../db.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { requireRole, WRITE_ROLES } from '../lib/permissions.js';
+import { auditCreate, auditUpdate, getIp } from '../lib/audit.js';
+
+function safeAuditCreate(args) {
+  return auditCreate(prisma, args).catch((err) => console.error('[audit:clientes]', err));
+}
+function safeAuditUpdate(args) {
+  return auditUpdate(prisma, args).catch((err) => console.error('[audit:clientes]', err));
+}
+function userIdFromReq(req) {
+  return req.user?.id != null ? BigInt(req.user.id) : null;
+}
 
 const router = express.Router();
 router.use(authenticateToken);
@@ -39,6 +50,13 @@ router.post('/', requireRole(...WRITE_ROLES), async (req, res) => {
     const parsed = ClienteCreate.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: 'Validación', details: parsed.error.issues });
     const cliente = await prisma.cliente.create({ data: parsed.data });
+    safeAuditCreate({
+      modelName: 'Cliente',
+      recordId: String(cliente.id),
+      data: cliente,
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
+    });
     return res.status(201).json(cliente);
   } catch (err) {
     console.error('[clientes.create]', err);
@@ -51,7 +69,17 @@ router.put('/:id', requireRole(...WRITE_ROLES), async (req, res) => {
     const id = BigInt(req.params.id);
     const parsed = ClienteCreate.partial().safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: 'Validación', details: parsed.error.issues });
+    const before = await prisma.cliente.findUnique({ where: { id } });
+    if (!before) return res.status(404).json({ error: 'Cliente no encontrado' });
     const cliente = await prisma.cliente.update({ where: { id }, data: parsed.data });
+    safeAuditUpdate({
+      modelName: 'Cliente',
+      recordId: String(cliente.id),
+      before,
+      after: cliente,
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
+    });
     return res.json(cliente);
   } catch (err) {
     if (err.code === 'P2025') return res.status(404).json({ error: 'Cliente no encontrado' });

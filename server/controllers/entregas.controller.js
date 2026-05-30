@@ -30,6 +30,20 @@ import {
   deleteEntrega as svcDeleteEntrega,
 } from '../services/entrega-flow.js';
 import { absoluteFromUploads } from '../lib/uploads.js';
+import { auditCreate, auditUpdate, auditDelete, getIp } from '../lib/audit.js';
+
+function safeAuditCreate(args) {
+  return auditCreate(prisma, args).catch((err) => console.error('[audit:entregas]', err));
+}
+function safeAuditUpdate(args) {
+  return auditUpdate(prisma, args).catch((err) => console.error('[audit:entregas]', err));
+}
+function safeAuditDelete(args) {
+  return auditDelete(prisma, args).catch((err) => console.error('[audit:entregas]', err));
+}
+function userIdFromReq(req) {
+  return req.user?.id != null ? BigInt(req.user.id) : null;
+}
 
 // ---------------------------------------------------------------------------
 // Schemas
@@ -279,6 +293,16 @@ export async function createEntregaHandler(req, res) {
       notas: parsed.data.notas ?? null,
     });
 
+    // Audit la creación de la entrega (fuera de la tx del service).
+    const { items: _ei, ...entregaScalar } = entrega;
+    safeAuditCreate({
+      modelName: 'Entrega',
+      recordId: String(entrega.id),
+      data: { ...entregaScalar, itemsCount: entrega.items?.length ?? 0 },
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
+    });
+
     // Re-leer con relaciones para devolver shape consistente.
     const full = await prisma.entrega.findUnique({
       where: { id: entrega.id },
@@ -336,6 +360,16 @@ export async function uploadFotos(req, res) {
     }));
 
     await attachFotosToEntrega(prisma, id, fileRecords, req.user.id);
+
+    // Audit: registramos un update de la entrega con el resumen de fotos agregadas.
+    safeAuditUpdate({
+      modelName: 'Entrega',
+      recordId: String(id),
+      before: { fotosCount: 0 },
+      after: { fotosCount: fileRecords.length, fotosPaths: fileRecords.map((r) => r.relativePath) },
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
+    });
 
     const full = await prisma.entrega.findUnique({
       where: { id },
@@ -446,8 +480,8 @@ export async function updateEntregaHandler(req, res) {
     }
     if (parsed.data.notas !== undefined) data.notas = parsed.data.notas ?? null;
 
-    const existing = await prisma.entrega.findUnique({ where: { id } });
-    if (!existing) return res.status(404).json({ error: 'Entrega no encontrada' });
+    const existingEntrega = await prisma.entrega.findUnique({ where: { id } });
+    if (!existingEntrega) return res.status(404).json({ error: 'Entrega no encontrada' });
 
     const updated = await prisma.entrega.update({
       where: { id },
@@ -466,6 +500,15 @@ export async function updateEntregaHandler(req, res) {
         },
       },
     });
+    const { items: _ui, fotos: _uf, oc: _uo, bodegaDestino: _ub, registradaPor: _ur, ...afterScalar } = updated;
+    safeAuditUpdate({
+      modelName: 'Entrega',
+      recordId: String(updated.id),
+      before: existingEntrega,
+      after: afterScalar,
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
+    });
     return res.json(entregaToJson(updated));
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message });
@@ -482,8 +525,21 @@ export async function deleteEntregaHandler(req, res) {
   try {
     const id = parseIdParam(req.params.id);
 
+    // Snapshot pre-delete para audit.
+    const snapshotEntrega = await prisma.entrega.findUnique({ where: { id } });
+
     // svcDeleteEntrega borra cascade (schema) + reajusta OC y devuelve paths.
     const result = await svcDeleteEntrega(prisma, id);
+
+    if (snapshotEntrega) {
+      safeAuditDelete({
+        modelName: 'Entrega',
+        recordId: String(snapshotEntrega.id),
+        snapshot: snapshotEntrega,
+        userId: userIdFromReq(req),
+        ipAddress: getIp(req),
+      });
+    }
 
     // Limpiar archivos físicos de fotos.
     for (const rel of result.fotoPaths) {

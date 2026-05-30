@@ -20,6 +20,20 @@ import {
   latestRate,
   serializeRate,
 } from '../services/exchange-rates.js';
+import { auditCreate, auditUpdate, auditDelete, getIp } from '../lib/audit.js';
+
+function safeAuditCreate(args) {
+  return auditCreate(prisma, args).catch((err) => console.error('[audit:exchange-rates]', err));
+}
+function safeAuditUpdate(args) {
+  return auditUpdate(prisma, args).catch((err) => console.error('[audit:exchange-rates]', err));
+}
+function safeAuditDelete(args) {
+  return auditDelete(prisma, args).catch((err) => console.error('[audit:exchange-rates]', err));
+}
+function userIdFromReq(req) {
+  return req.user?.id != null ? BigInt(req.user.id) : null;
+}
 
 // --- Schemas ---------------------------------------------------------------
 
@@ -173,6 +187,10 @@ export async function createManualExchangeRate(req, res) {
     const currency = parsed.data.currency || 'USD';
     const dateObj = new Date(`${parsed.data.date}T00:00:00.000Z`);
 
+    const existing = await prisma.exchangeRate.findUnique({
+      where: { currency_date: { currency, date: dateObj } },
+    });
+
     const upserted = await prisma.exchangeRate.upsert({
       where: { currency_date: { currency, date: dateObj } },
       create: {
@@ -189,6 +207,24 @@ export async function createManualExchangeRate(req, res) {
         fetchedAt: new Date(),
       },
     });
+    if (existing) {
+      safeAuditUpdate({
+        modelName: 'ExchangeRate',
+        recordId: String(upserted.id),
+        before: existing,
+        after: upserted,
+        userId: userIdFromReq(req),
+        ipAddress: getIp(req),
+      });
+    } else {
+      safeAuditCreate({
+        modelName: 'ExchangeRate',
+        recordId: String(upserted.id),
+        data: upserted,
+        userId: userIdFromReq(req),
+        ipAddress: getIp(req),
+      });
+    }
     return res.status(201).json(serializeRate(upserted));
   } catch (err) {
     console.error('[exchange-rates.createManual] error:', err);
@@ -209,6 +245,13 @@ export async function deleteExchangeRate(req, res) {
     if (!existing) return res.status(404).json({ error: 'Rate no encontrado' });
 
     await prisma.exchangeRate.delete({ where: { id: BigInt(id) } });
+    safeAuditDelete({
+      modelName: 'ExchangeRate',
+      recordId: String(existing.id),
+      snapshot: existing,
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
+    });
     return res.json({ ok: true, id });
   } catch (err) {
     console.error('[exchange-rates.delete] error:', err);

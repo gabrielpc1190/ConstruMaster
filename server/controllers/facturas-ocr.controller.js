@@ -30,13 +30,23 @@ import { unlink } from 'node:fs/promises';
 
 import prisma from '../db.js';
 import { relativeToUploads } from '../lib/uploads.js';
-import { extractInvoice, OCRError } from '../services/gemini-ocr.js';
+import { processFacturaImagen } from '../services/factura-processor.js';
+import { enqueueFacturaParse } from '../queues/factura-queue.js';
+import { auditCreate, auditUpdate, getIp } from '../lib/audit.js';
+
+function safeAuditCreate(args) {
+  return auditCreate(prisma, args).catch((err) => console.error('[audit:facturas-ocr]', err));
+}
+function safeAuditUpdate(args) {
+  return auditUpdate(prisma, args).catch((err) => console.error('[audit:facturas-ocr]', err));
+}
+function userIdFromReq(req) {
+  return req.user?.id != null ? BigInt(req.user.id) : null;
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-const DEFAULT_CONFIDENCE = 0.85;
 
 /** Parse `req.params.ocId` → BigInt. Si no es válido, lanza 400. */
 function parseIdParam(value, name = 'ocId') {
@@ -93,41 +103,6 @@ function normalizeCurrency(value) {
 }
 
 /**
- * Mapea el output del OCR Gemini al schema canónico de Factura.
- *
- * Acepta variantes habituales en los nombres de campos: el modelo a veces
- * devuelve `numero`, `consecutivo`, `factura`, etc., dependiendo del prompt
- * y de cómo "ve" el documento. Tolerancia liberal acá; el supervisor revisa.
- */
-function mapOcrToCanonical(data) {
-  const numeroConsecutivo =
-    data?.numero ??
-    data?.consecutivo ??
-    data?.factura ??
-    data?.numero_factura ??
-    null;
-
-  const fechaEmision = parseLooseDate(data?.fecha);
-
-  const total = data?.total;
-  const totalNum = typeof total === 'number' ? total : Number(total);
-  const hasTotal = Number.isFinite(totalNum);
-  const currency = normalizeCurrency(data?.moneda);
-
-  return {
-    tipoComprobante: null,
-    claveNumerica: null,
-    numeroConsecutivo:
-      numeroConsecutivo != null ? String(numeroConsecutivo) : null,
-    fechaEmision,
-    montoTotalAmount: hasTotal ? totalNum : null,
-    montoTotalCurrency: hasTotal ? currency : null,
-    condicionVenta: null,
-    mediosPago: [],
-  };
-}
-
-/**
  * Convierte una factura cruda de Prisma a JSON serializable.
  * Duplica lo justo de `facturas.controller.js` para no introducir un import
  * cíclico ni exportar un helper interno; el shape se mantiene en sync.
@@ -180,8 +155,13 @@ function facturaToJson(f) {
 // ---------------------------------------------------------------------------
 
 /**
- * Handler post-multer para subida de factura escaneada.
+ * Handler post-multer para subida de factura escaneada (PDF/imagen).
  * Multer ya guardó el archivo en `uploads/facturas/<...>` y dejó `req.file`.
+ *
+ * Flujo igual al XML upload:
+ *  - Crea Factura `pending` con el archivo en disco.
+ *  - Si la queue (Redis) está disponible → encola + 202 Accepted.
+ *  - Si no → procesa inline con `processFacturaImagen` (path legacy).
  */
 export async function uploadFacturaImagen(req, res) {
   let absPath = null;
@@ -206,55 +186,35 @@ export async function uploadFacturaImagen(req, res) {
     const relPath = relativeToUploads(absPath);
     const sourceType = sourceTypeFromMime(req.file.mimetype);
 
-    // 2. Crear factura en `processing` para tener registro aunque el OCR falle.
-    let factura = await prisma.factura.create({
+    // 2. Crear factura en `pending`.
+    const factura = await prisma.factura.create({
       data: {
         ocId,
         sourceType,
         archivoOriginalPath: relPath,
-        status: 'processing',
+        status: 'pending',
       },
     });
     facturaId = factura.id;
+    safeAuditCreate({
+      modelName: 'Factura',
+      recordId: String(factura.id),
+      data: factura,
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
+    });
 
-    // 3. Llamar OCR Gemini (síncrono, ~10-30s típico).
-    let ocrResult;
+    // 3. Intentar encolar (no-op si no hay Redis).
+    let queued = null;
     try {
-      ocrResult = await extractInvoice(absPath);
+      queued = await enqueueFacturaParse({ facturaId: factura.id, kind: 'imagen' });
     } catch (err) {
-      const message =
-        err instanceof OCRError ? err.message : `OCR falló: ${err.message}`;
-      console.warn(
-        `[facturas-ocr.upload] OCR falló (id=${factura.id}): ${message}`,
-      );
-      factura = await prisma.factura.update({
-        where: { id: factura.id },
-        data: {
-          status: 'error',
-          errorMessage: message,
-        },
-      });
-      // Conservamos el archivo en disco para que el operador pueda revisarlo.
-      return res.status(200).json(facturaToJson(factura));
+      console.warn(`[facturas-ocr.upload] enqueue falló, fallback a sync: ${err.message}`);
     }
 
-    // 4. Mapear y persistir el resultado canónico.
-    const canonical = mapOcrToCanonical(ocrResult.data);
-    const confidence =
-      typeof ocrResult.confidence === 'number'
-        ? ocrResult.confidence
-        : DEFAULT_CONFIDENCE;
-
-    try {
-      factura = await prisma.factura.update({
+    if (queued) {
+      const withRels = await prisma.factura.findUnique({
         where: { id: factura.id },
-        data: {
-          ...canonical,
-          extractedData: ocrResult.data,
-          status: 'extracted',
-          confidenceScore: confidence,
-          errorMessage: null,
-        },
         include: {
           oc: {
             select: {
@@ -265,21 +225,30 @@ export async function uploadFacturaImagen(req, res) {
           },
         },
       });
-    } catch (err) {
-      // No esperamos P2002 porque claveNumerica es null (UNIQUE es parcial WHERE
-      // NOT NULL). Lo manejamos igual por defensa: limpiar archivo + responder.
-      if (err && err.code === 'P2002') {
-        await prisma.factura.delete({ where: { id: factura.id } }).catch(() => {});
-        await safeUnlink(absPath);
-        return res.status(409).json({
-          error: 'Conflicto al persistir factura escaneada',
-          details: err.meta || null,
-        });
-      }
-      throw err;
+      return res
+        .status(202)
+        .json({ ...facturaToJson(withRels), queued: true, jobId: queued.id });
     }
 
-    return res.status(201).json(facturaToJson(factura));
+    // 4. Path sync (legacy): OCR inline.
+    const updated = await processFacturaImagen(prisma, factura.id);
+    const withRels = await prisma.factura.findUnique({
+      where: { id: updated.id },
+      include: {
+        oc: {
+          select: {
+            id: true,
+            numeroOc: true,
+            proveedor: { select: { id: true, nombre: true } },
+          },
+        },
+      },
+    });
+    // Preservar contrato HTTP histórico del sync path: si OCR falló y la
+    // factura quedó en error, respondemos 200 (no 201) para que el frontend
+    // diferencie entre upload OK y upload con OCR fallido.
+    const status = updated.status === 'error' ? 200 : 201;
+    return res.status(status).json(facturaToJson(withRels));
   } catch (err) {
     if (absPath && !facturaId) {
       // Solo limpiamos el archivo si no llegamos a crear la Factura;
@@ -376,6 +345,15 @@ export async function updateFacturaCanonical(req, res) {
           },
         },
       },
+    });
+    const { oc: _ufo, ...updatedScalar } = updated;
+    safeAuditUpdate({
+      modelName: 'Factura',
+      recordId: String(updated.id),
+      before: factura,
+      after: updatedScalar,
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
     });
     return res.json(facturaToJson(updated));
   } catch (err) {

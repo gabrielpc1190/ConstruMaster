@@ -14,6 +14,20 @@
 import { z } from 'zod';
 import prisma from '../db.js';
 import { slugify, uniqueSlug } from '../lib/slug.js';
+import { auditCreate, auditUpdate, auditDelete, getIp } from '../lib/audit.js';
+
+function safeAuditCreate(args) {
+  return auditCreate(prisma, args).catch((err) => console.error('[audit:items-catalogo]', err));
+}
+function safeAuditUpdate(args) {
+  return auditUpdate(prisma, args).catch((err) => console.error('[audit:items-catalogo]', err));
+}
+function safeAuditDelete(args) {
+  return auditDelete(prisma, args).catch((err) => console.error('[audit:items-catalogo]', err));
+}
+function userIdFromReq(req) {
+  return req.user?.id != null ? BigInt(req.user.id) : null;
+}
 
 const TIPOS = ['material', 'servicio'];
 const ESTADOS = ['pendiente', 'aprobado', 'inactivo'];
@@ -189,6 +203,13 @@ export async function createItem(req, res) {
         sugeridoPorId: isOperativo && req.user?.id ? BigInt(req.user.id) : null,
       },
     });
+    safeAuditCreate({
+      modelName: 'ItemCatalogo',
+      recordId: String(created.id),
+      data: created,
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
+    });
     return res.status(201).json(serialize(created));
   } catch (err) {
     console.error('[items.create] unexpected error:', err);
@@ -230,6 +251,14 @@ export async function updateItem(req, res) {
       where: { id: BigInt(id) },
       data,
     });
+    safeAuditUpdate({
+      modelName: 'ItemCatalogo',
+      recordId: String(updated.id),
+      before: existing,
+      after: updated,
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
+    });
     return res.json(serialize(updated));
   } catch (err) {
     console.error('[items.update] unexpected error:', err);
@@ -254,6 +283,14 @@ export async function approveItem(req, res) {
       where: { id: BigInt(id) },
       data: { estado: 'aprobado' },
     });
+    safeAuditUpdate({
+      modelName: 'ItemCatalogo',
+      recordId: String(updated.id),
+      before: existing,
+      after: updated,
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
+    });
     return res.json(serialize(updated));
   } catch (err) {
     console.error('[items.approve] unexpected error:', err);
@@ -273,6 +310,13 @@ export async function deleteItem(req, res) {
     const updated = await prisma.itemCatalogo.update({
       where: { id: BigInt(id) },
       data: { activo: false },
+    });
+    safeAuditDelete({
+      modelName: 'ItemCatalogo',
+      recordId: String(updated.id),
+      snapshot: existing,
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
     });
     return res.json(serialize(updated));
   } catch (err) {

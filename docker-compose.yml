@@ -17,6 +17,31 @@ services:
       timeout: 5s
       retries: 10
 
+  # Redis para BullMQ (procesamiento async de facturas XML + OCR).
+  # NO expone puerto al host — los consumidores son procesos en compose o
+  # procesos host que se conectan via 127.0.0.1 si extendés con port mapping.
+  # En dev (host process), el web server usa `REDIS_URL=redis://localhost:6379`
+  # SOLO si querés probar el path async; default del .env.example deja la queue
+  # apagada (sync mode, backwards compat).
+  redis:
+    image: redis:7-alpine
+    container_name: construmaster_v2_redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - construmaster_v2_redisdata:/data
+    # Sin `ports:` — solo accesible desde la red de compose. Para usar desde
+    # el host process (dev), descomentá la línea de abajo:
+    # ports:
+    #   - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
 volumes:
   construmaster_v2_pgdata:
     name: construmaster_v2_pgdata
+  construmaster_v2_redisdata:
+    name: construmaster_v2_redisdata

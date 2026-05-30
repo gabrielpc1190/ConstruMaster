@@ -28,18 +28,25 @@
  */
 
 import fs from 'node:fs';
-import { readFileSync } from 'node:fs';
 import { unlink, stat } from 'node:fs/promises';
 
 import { z } from 'zod';
 
 import prisma from '../db.js';
-import {
-  parseComprobanteXml,
-  XmlSyntaxError,
-  UnknownComprobanteError,
-} from '../services/xml-parser.js';
 import { absoluteFromUploads, relativeToUploads } from '../lib/uploads.js';
+import { processFacturaXml } from '../services/factura-processor.js';
+import { enqueueFacturaParse } from '../queues/factura-queue.js';
+import { auditCreate, auditUpdate, getIp } from '../lib/audit.js';
+
+function safeAuditCreate(args) {
+  return auditCreate(prisma, args).catch((err) => console.error('[audit:facturas]', err));
+}
+function safeAuditUpdate(args) {
+  return auditUpdate(prisma, args).catch((err) => console.error('[audit:facturas]', err));
+}
+function userIdFromReq(req) {
+  return req.user?.id != null ? BigInt(req.user.id) : null;
+}
 
 // ---------------------------------------------------------------------------
 // Schemas
@@ -87,39 +94,6 @@ async function safeUnlink(absPath) {
       console.warn(`[facturas] no se pudo borrar archivo ${absPath}: ${err.message}`);
     }
   }
-}
-
-/**
- * Convierte una fecha de Hacienda (ISO 8601 con offset, ej.
- * "2026-05-04T14:16:06-06:00") a un Date apto para Prisma @db.Date.
- *
- * Tolera strings vacíos / null. Si es inparseable, devuelve null.
- */
-function parseHaciendaDate(value) {
-  if (!value) return null;
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return null;
-  return d;
-}
-
-/** Mapea el output del parser a campos canónicos del modelo Factura. */
-function buildCanonicalFromParsed(parsed) {
-  const totalComp = parsed.totales?.totalComprobante ?? null;
-  const monedaCode = parsed.moneda || 'CRC';
-  // El enum Currency de Prisma solo acepta CRC / USD. Si el XML trae otra
-  // moneda (ej. EUR), guardamos null y dejamos el detalle en extractedData.
-  const currency = monedaCode === 'CRC' || monedaCode === 'USD' ? monedaCode : null;
-
-  return {
-    tipoComprobante: parsed.tipo ?? null,
-    claveNumerica: parsed.claveNumerica ?? null,
-    numeroConsecutivo: parsed.numeroConsecutivo ?? null,
-    fechaEmision: parseHaciendaDate(parsed.fechaEmision),
-    montoTotalAmount: totalComp != null ? totalComp : null,
-    montoTotalCurrency: totalComp != null ? currency : null,
-    condicionVenta: parsed.condicionVenta ?? null,
-    mediosPago: parsed.medioPago ?? [],
-  };
 }
 
 /** Convierte una factura cruda de Prisma a JSON serializable (BigInt → number, Decimal → string). */
@@ -230,6 +204,18 @@ export async function getFactura(req, res) {
 /**
  * Handler post-multer. Multer ya guardó el archivo y dejó `req.file`.
  * Si llegamos acá sin `req.file`, es error de cliente.
+ *
+ * Flujo:
+ *  1. Crea la Factura en estado `pending` (referencia al archivo en disco).
+ *  2. Si la queue (Redis) está disponible → encola job + 202 Accepted.
+ *     El worker procesa async y deja la factura en `extracted`/`error`.
+ *  3. Si NO hay queue → procesa inline llamando `processFacturaXml`
+ *     (path histórico) + 201 Created.
+ *
+ * En cualquier caso, si la factura sale como `error` por XML inválido o
+ * clave_numerica duplicada (path sync), respondemos con la factura, no con
+ * un 409, para mantener consistencia con el path async. La UI lee `status`
+ * y `errorMessage`.
  */
 export async function uploadFacturaXml(req, res) {
   let absPath = null;
@@ -242,9 +228,7 @@ export async function uploadFacturaXml(req, res) {
     }
     absPath = req.file.path;
 
-    // 1. Verificar que la OC existe (después de multer para no crear path
-    //    de almacenamiento por una OC inexistente — pero igual chequeamos
-    //    acá y limpiamos si falla).
+    // 1. Verificar que la OC existe.
     const oc = await prisma.ordenCompra.findUnique({ where: { id: ocId } });
     if (!oc) {
       await safeUnlink(absPath);
@@ -253,74 +237,82 @@ export async function uploadFacturaXml(req, res) {
 
     const relPath = relativeToUploads(absPath);
 
-    // 2. Crear factura en `processing` para tener registro aunque el parser falle.
-    let factura = await prisma.factura.create({
+    // 2. Crear factura en `pending` para tener registro aunque el procesamiento falle.
+    const factura = await prisma.factura.create({
       data: {
         ocId,
         sourceType: 'xml',
         archivoOriginalPath: relPath,
-        status: 'processing',
+        status: 'pending',
+      },
+    });
+    safeAuditCreate({
+      modelName: 'Factura',
+      recordId: String(factura.id),
+      data: factura,
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
+    });
+
+    // 3. Intentar encolar (no-op si REDIS_URL no está definida).
+    let queued = null;
+    try {
+      queued = await enqueueFacturaParse({ facturaId: factura.id, kind: 'xml' });
+    } catch (err) {
+      console.warn(`[facturas.upload] enqueue falló, fallback a sync: ${err.message}`);
+    }
+
+    if (queued) {
+      // 4a. Path async: el worker procesa. Respondemos 202 con el id para que
+      //     el frontend haga polling de `/api/facturas/:id`.
+      const withRels = await prisma.factura.findUnique({
+        where: { id: factura.id },
+        include: {
+          oc: { select: { id: true, numeroOc: true, proveedor: { select: { id: true, nombre: true } } } },
+        },
+      });
+      return res.status(202).json({ ...facturaToJson(withRels), queued: true, jobId: queued.id });
+    }
+
+    // 4b. Path sync (legacy): procesar inline.
+    const updated = await processFacturaXml(prisma, factura.id);
+    const withRels = await prisma.factura.findUnique({
+      where: { id: updated.id },
+      include: {
+        oc: { select: { id: true, numeroOc: true, proveedor: { select: { id: true, nombre: true } } } },
       },
     });
 
-    // 3. Parsear
-    let parsed;
-    try {
-      const xmlString = readFileSync(absPath, 'utf-8');
-      parsed = parseComprobanteXml(xmlString);
-    } catch (err) {
-      if (err instanceof XmlSyntaxError || err instanceof UnknownComprobanteError) {
-        console.warn(`[facturas.upload] parsing falló (id=${factura.id}): ${err.message}`);
-        factura = await prisma.factura.update({
-          where: { id: factura.id },
-          data: {
-            status: 'error',
-            errorMessage: err.message,
-          },
-        });
-        return res.status(200).json(facturaToJson(factura));
-      }
-      // Cualquier otro error es bug nuestro — re-lanzamos.
-      throw err;
-    }
-
-    // 4. Persistir resultado canónico
-    const canonical = buildCanonicalFromParsed(parsed);
-    try {
-      factura = await prisma.factura.update({
-        where: { id: factura.id },
-        data: {
-          ...canonical,
-          extractedData: parsed,
-          status: 'extracted',
-          confidenceScore: null, // XML es determinista
-          errorMessage: null,
-        },
-      });
-    } catch (err) {
-      // Unique violation en clave_numerica → 409
-      if (err && err.code === 'P2002') {
-        const existing = canonical.claveNumerica
+    // Preservar contrato HTTP histórico del sync path:
+    //  - status='error' por XML mal formado / namespace desconocido / archivo
+    //    no legible → 200 con la factura (frontend lee body.status).
+    //  - status='error' por clave_numerica duplicada → 409 + existingFacturaId
+    //    y cleanup del archivo + delete de la factura fallida (consistente con
+    //    el comportamiento original previo al refactor).
+    if (updated.status === 'error' && updated.errorMessage) {
+      const isDup = /clave_numerica="[^"]+" ya existe/.test(updated.errorMessage);
+      if (isDup) {
+        // Extraer la clave del errorMessage para buscar la factura existente.
+        // processFacturaXml setea: `Factura con clave_numerica="<clave>" ya existe`
+        const m = updated.errorMessage.match(/clave_numerica="([^"]+)"/);
+        const clave = m ? m[1] : null;
+        const existing = clave
           ? await prisma.factura.findFirst({
-              where: {
-                claveNumerica: canonical.claveNumerica,
-                NOT: { id: factura.id },
-              },
+              where: { claveNumerica: clave, NOT: { id: updated.id } },
               select: { id: true },
             })
           : null;
-        // Borrar el registro fallido y el archivo en disco.
-        await prisma.factura.delete({ where: { id: factura.id } }).catch(() => {});
+        await prisma.factura.delete({ where: { id: updated.id } }).catch(() => {});
         await safeUnlink(absPath);
         return res.status(409).json({
           error: 'Factura con esa clave ya existe',
           existingFacturaId: existing ? Number(existing.id) : null,
         });
       }
-      throw err;
+      return res.status(200).json(facturaToJson(withRels));
     }
 
-    return res.status(201).json(facturaToJson(factura));
+    return res.status(201).json(facturaToJson(withRels));
   } catch (err) {
     // Cleanup en cualquier error inesperado
     if (absPath) await safeUnlink(absPath);
@@ -357,6 +349,15 @@ export async function confirmarFactura(req, res) {
         confirmadaPor: { select: { id: true, username: true, fullName: true } },
       },
     });
+    const { oc: _co, confirmadaPor: _cp, ...afterScalar } = updated;
+    safeAuditUpdate({
+      modelName: 'Factura',
+      recordId: String(updated.id),
+      before: factura,
+      after: afterScalar,
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
+    });
     return res.json(facturaToJson(updated));
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message });
@@ -386,6 +387,14 @@ export async function anularFactura(req, res) {
         status: 'error',
         errorMessage: body.data.motivo ?? 'Anulada por usuario',
       },
+    });
+    safeAuditUpdate({
+      modelName: 'Factura',
+      recordId: String(updated.id),
+      before: factura,
+      after: updated,
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
     });
     return res.json(facturaToJson(updated));
   } catch (err) {

@@ -8,6 +8,20 @@
 import { z } from 'zod';
 
 import prisma from '../db.js';
+import { auditCreate, auditUpdate, auditDelete, getIp } from '../lib/audit.js';
+
+function safeAuditCreate(args) {
+  return auditCreate(prisma, args).catch((err) => console.error('[audit:bodegas]', err));
+}
+function safeAuditUpdate(args) {
+  return auditUpdate(prisma, args).catch((err) => console.error('[audit:bodegas]', err));
+}
+function safeAuditDelete(args) {
+  return auditDelete(prisma, args).catch((err) => console.error('[audit:bodegas]', err));
+}
+function userIdFromReq(req) {
+  return req.user?.id != null ? BigInt(req.user.id) : null;
+}
 
 // ===================== Helpers =====================
 
@@ -139,6 +153,13 @@ export async function createBodega(req, res) {
       },
     });
     console.log('[bodegas] create id=%s clienteId=%s nombre=%s', created.id, clienteId, created.nombre);
+    safeAuditCreate({
+      modelName: 'Bodega',
+      recordId: String(created.id),
+      data: created,
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
+    });
     return res.status(201).json(serializeBodega(created));
   } catch (err) {
     if (err.code === 'P2002') {
@@ -202,6 +223,9 @@ export async function updateBodega(req, res) {
     if (data.activo !== undefined) update.activo = data.activo;
     if (data.notas !== undefined) update.notas = data.notas;
 
+    const before = await prisma.bodega.findUnique({ where: { id } });
+    if (!before) return res.status(404).json({ error: 'Bodega no encontrada' });
+
     const updated = await prisma.bodega.update({
       where: { id },
       data: update,
@@ -209,6 +233,14 @@ export async function updateBodega(req, res) {
         cliente: { select: { id: true, nombre: true } },
         responsable: { select: { id: true, username: true, fullName: true } },
       },
+    });
+    safeAuditUpdate({
+      modelName: 'Bodega',
+      recordId: String(updated.id),
+      before,
+      after: updated,
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
     });
     return res.json(serializeBodega(updated));
   } catch (err) {
@@ -238,6 +270,13 @@ export async function deleteBodega(req, res) {
       },
     });
     console.log('[bodegas] delete-soft id=%s', updated.id);
+    safeAuditDelete({
+      modelName: 'Bodega',
+      recordId: String(updated.id),
+      snapshot: existing,
+      userId: userIdFromReq(req),
+      ipAddress: getIp(req),
+    });
     return res.json({ ok: true, bodega: serializeBodega(updated) });
   } catch (err) {
     console.error('[bodegas.delete] error:', err);
