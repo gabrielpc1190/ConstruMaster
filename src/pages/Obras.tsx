@@ -11,10 +11,6 @@ import { Badge } from '../components/ui/Badge';
 import { PageHeader } from '../components/ui/PageHeader';
 import { formatDate } from '../lib/format';
 
-// TODO Fase 2: cuando exista GET /api/clientes reemplazar este default.
-const DEFAULT_CLIENTE_ID = 1;
-const DEFAULT_CLIENTE_NOMBRE = 'Nicholas Charles Rowley';
-
 type ObraEstado = 'planificada' | 'en_curso' | 'pausada' | 'finalizada';
 type Moneda = 'CRC' | 'USD';
 
@@ -49,6 +45,11 @@ const ESTADO_TONES: Record<ObraEstado, 'slate' | 'indigo' | 'emerald' | 'amber' 
   finalizada: 'slate',
 };
 
+interface Cliente {
+  id: number;
+  nombre: string;
+}
+
 interface CreateObraInput {
   nombre: string;
   clienteId: number;
@@ -61,6 +62,7 @@ interface CreateObraInput {
 }
 
 interface FormState {
+  clienteId: number | '';
   nombre: string;
   direccion: string;
   fechaInicio: string;
@@ -71,6 +73,7 @@ interface FormState {
 }
 
 const emptyForm: FormState = {
+  clienteId: '',
   nombre: '',
   direccion: '',
   fechaInicio: '',
@@ -93,6 +96,7 @@ export default function Obras() {
   const queryKey = useMemo(() => ['obras', { estado: estadoFilter || undefined }] as const, [estadoFilter]);
   const path = estadoFilter ? `/obras?estado=${estadoFilter}` : '/obras';
   const { data: obras = [], isLoading } = useList<Obra>(queryKey, path);
+  const { data: clientes = [] } = useList<Cliente>(['clientes'], '/clientes');
 
   const createObra = useCreate<CreateObraInput, Obra>('/obras', [['obras']]);
 
@@ -108,7 +112,9 @@ export default function Obras() {
   };
 
   const openCreate = () => {
-    resetForm();
+    const preselectedCliente = clientes.length === 1 ? clientes[0].id : '';
+    setForm({ ...emptyForm, clienteId: preselectedCliente });
+    setErrors({});
     setDrawerOpen(true);
   };
 
@@ -121,13 +127,14 @@ export default function Obras() {
     e.preventDefault();
     const next: typeof errors = {};
     if (!form.nombre.trim()) next.nombre = 'Nombre es requerido';
+    if (form.clienteId === '') next.clienteId = 'Seleccioná un cliente';
     if (Object.keys(next).length) {
       setErrors(next);
       return;
     }
     const payload: CreateObraInput = {
       nombre: form.nombre.trim(),
-      clienteId: DEFAULT_CLIENTE_ID,
+      clienteId: Number(form.clienteId),
       direccion: form.direccion.trim() || undefined,
       fechaInicio: form.fechaInicio || undefined,
       fechaFinEstimada: form.fechaFinEstimada || undefined,
@@ -223,8 +230,34 @@ export default function Obras() {
         }
       >
         <form onSubmit={handleSubmit} className="space-y-4">
-          <Field label="Cliente">
-            <Input value={DEFAULT_CLIENTE_NOMBRE} disabled />
+          <Field
+            label="Cliente"
+            required
+            error={errors.clienteId}
+            hint={
+              clientes.length === 1
+                ? 'Único cliente disponible; preseleccionado.'
+                : undefined
+            }
+          >
+            <Select
+              value={form.clienteId === '' ? '' : String(form.clienteId)}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  clienteId:
+                    e.target.value === '' ? '' : Number(e.target.value),
+                })
+              }
+              disabled={clientes.length <= 1}
+            >
+              <option value="">— Seleccionar cliente —</option>
+              {clientes.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nombre}
+                </option>
+              ))}
+            </Select>
           </Field>
 
           <Field label="Nombre" required error={errors.nombre}>

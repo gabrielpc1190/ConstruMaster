@@ -18,7 +18,7 @@ import express from 'express';
 
 import { authenticateToken } from '../middleware/auth.js';
 import { requireRole, CATALOG_WRITE, WRITE_ROLES, ALL_AUTH_ROLES } from '../lib/permissions.js';
-import { xmlUpload } from '../lib/uploads.js';
+import { xmlUpload, facturaImagenUpload } from '../lib/uploads.js';
 import {
   listFacturas,
   getFactura,
@@ -27,6 +27,10 @@ import {
   anularFactura,
   downloadArchivo,
 } from '../controllers/facturas.controller.js';
+import {
+  uploadFacturaImagen,
+  updateFacturaCanonical,
+} from '../controllers/facturas-ocr.controller.js';
 
 const router = express.Router();
 
@@ -66,6 +70,37 @@ router.post(
   uploadFacturaXml,
 );
 
+/**
+ * Wrapper de multer para subida de factura escaneada (PDF/imagen). Mismo
+ * patrón que `runXmlUpload` pero con los MIMEs y límites de `facturaImagenUpload`.
+ */
+function runFacturaImagenUpload(req, res, next) {
+  facturaImagenUpload(req, res, (err) => {
+    if (!err) return next();
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ error: 'Archivo demasiado grande (máx 20 MB)' });
+    }
+    if (err.code === 'INVALID_FILE_TYPE') {
+      return res.status(415).json({ error: err.message });
+    }
+    if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+      return res
+        .status(400)
+        .json({ error: 'Campo de archivo inesperado (esperado "archivo")' });
+    }
+    console.error('[facturas.upload-imagen] multer error:', err);
+    return res.status(err.status || 500).json({ error: err.message || 'Upload failed' });
+  });
+}
+
+router.post(
+  '/upload-imagen/:ocId',
+  requireRole(...CATALOG_WRITE),
+  runFacturaImagenUpload,
+  uploadFacturaImagen,
+);
+
+router.put('/:id', requireRole(...WRITE_ROLES), updateFacturaCanonical);
 router.post('/:id/confirmar', requireRole(...WRITE_ROLES), confirmarFactura);
 router.post('/:id/anular', requireRole(...WRITE_ROLES), anularFactura);
 

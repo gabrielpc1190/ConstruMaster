@@ -399,12 +399,33 @@ export async function anularFactura(req, res) {
 // GET /api/facturas/:id/archivo
 // ---------------------------------------------------------------------------
 
+/**
+ * Mapea la extensión del archivo a un Content-Type razonable. Sirve para
+ * descargas tanto de XML como de PDF/imagen (facturas escaneadas via OCR).
+ */
+function contentTypeFromPath(path) {
+  const lower = String(path || '').toLowerCase();
+  if (lower.endsWith('.xml')) return 'application/xml; charset=utf-8';
+  if (lower.endsWith('.pdf')) return 'application/pdf';
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  if (lower.endsWith('.heic')) return 'image/heic';
+  if (lower.endsWith('.heif')) return 'image/heif';
+  return 'application/octet-stream';
+}
+
 export async function downloadArchivo(req, res) {
   try {
     const id = parseIdParam(req.params.id);
     const factura = await prisma.factura.findUnique({
       where: { id },
-      select: { archivoOriginalPath: true, claveNumerica: true, numeroConsecutivo: true },
+      select: {
+        archivoOriginalPath: true,
+        claveNumerica: true,
+        numeroConsecutivo: true,
+        sourceType: true,
+      },
     });
     if (!factura) return res.status(404).json({ error: 'Factura no encontrada' });
     if (!factura.archivoOriginalPath) {
@@ -418,8 +439,13 @@ export async function downloadArchivo(req, res) {
       return res.status(404).json({ error: 'Archivo no encontrado en disco' });
     }
 
-    const filename = `${factura.claveNumerica || factura.numeroConsecutivo || `factura-${id}`}.xml`;
-    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    // Para facturas escaneadas conservamos la extensión original (PDF/JPG/etc).
+    // Para XML preservamos el nombre legible histórico.
+    const origBase = factura.archivoOriginalPath.split('/').pop() || '';
+    const extMatch = origBase.match(/\.[a-z0-9]+$/i);
+    const ext = extMatch ? extMatch[0] : '.xml';
+    const filename = `${factura.claveNumerica || factura.numeroConsecutivo || `factura-${id}`}${ext}`;
+    res.setHeader('Content-Type', contentTypeFromPath(factura.archivoOriginalPath));
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     const stream = fs.createReadStream(absPath);
     stream.on('error', (err) => {

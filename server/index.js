@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import path from 'node:path';
 import 'dotenv/config';
 
 // Prisma BigInt IDs need an explicit JSON serializer. Values < 2^53 fit Number safely.
@@ -20,6 +21,8 @@ import { pagosRouter, pagosOcRouter } from './routes/pagos.routes.js';
 import entregasRoutes, { entregasUnderOcs } from './routes/entregas.routes.js';
 import exchangeRatesRoutes from './routes/exchange-rates.routes.js';
 import auditLogRoutes from './routes/audit-log.routes.js';
+import rfqsRoutes from './routes/rfqs.routes.js';
+import reportesRoutes from './routes/reportes.routes.js';
 import { startBccrCron } from './cron/bccr-daily.js';
 import prisma from './db.js';
 import { errorHandler } from './middleware/errorHandler.js';
@@ -51,6 +54,22 @@ app.use('/api/entregas', entregasRoutes);
 app.use('/api/facturas', facturasRoutes);
 app.use('/api/exchange-rates', exchangeRatesRoutes);
 app.use('/api/audit-log', auditLogRoutes);
+app.use('/api/rfqs', rfqsRoutes);
+app.use('/api/reportes', reportesRoutes);
+
+// Production: serve the Vite-built SPA from dist/ in the same process as the
+// API. This block MUST sit after all /api/* routers (otherwise the SPA fallback
+// would swallow API requests) and before the 404 handler (otherwise the 404
+// would beat the fallback). In dev, Vite serves the frontend on :8000 with a
+// proxy to :3001, so we skip this entirely.
+if (process.env.NODE_ENV === 'production') {
+  const distPath = path.resolve('dist');
+  // Hashed asset filenames -> immutable + long-lived cache. index.html is
+  // served by the SPA fallback below with default no-cache behavior so users
+  // pick up new bundle hashes on the next navigation.
+  app.use(express.static(distPath, { index: false, maxAge: '1y', immutable: true }));
+  app.get(/^\/(?!api).*/, (_req, res) => res.sendFile(path.join(distPath, 'index.html')));
+}
 
 app.use((req, res, _next) => {
   res.status(404).json({ error: `Not found: ${req.method} ${req.originalUrl}` });

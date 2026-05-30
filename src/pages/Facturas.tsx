@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus } from 'lucide-react';
+import { FileText, Sparkles } from 'lucide-react';
 import { useList } from '../hooks/useApi';
 import { Button } from '../components/ui/Button';
 import { Select, Field } from '../components/ui/Input';
@@ -9,10 +9,12 @@ import { Drawer } from '../components/ui/Drawer';
 import { Badge } from '../components/ui/Badge';
 import { PageHeader } from '../components/ui/PageHeader';
 import { FacturaUploadForm } from '../components/FacturaUploadForm';
+import { FacturaImagenUploadForm } from '../components/FacturaImagenUploadForm';
 import { formatMoney, formatDate, type Money } from '../lib/format';
 
 type FacturaStatus = 'pending' | 'processing' | 'extracted' | 'confirmed' | 'error';
 type FacturaTipo = 'FE' | 'TE' | 'NC' | 'ND' | 'FEC' | 'FEE';
+type FacturaSourceType = 'xml' | 'pdf' | 'imagen';
 
 interface ProveedorMini { id: number; nombre: string }
 interface OcMini { id: number; numeroOc: string; proveedor: ProveedorMini }
@@ -21,8 +23,8 @@ interface FacturaRow {
   id: number;
   ocId: number;
   oc: OcMini;
-  sourceType: 'xml' | 'pdf' | 'imagen';
-  tipoComprobante: FacturaTipo;
+  sourceType: FacturaSourceType;
+  tipoComprobante: FacturaTipo | null;
   status: FacturaStatus;
   numeroConsecutivo?: string | null;
   fechaEmision?: string | null;
@@ -64,11 +66,32 @@ const TIPO_LABELS: Record<FacturaTipo, string> = {
   FEE: 'Factura Electrónica de Exportación',
 };
 
-export function FacturaTipoBadge({ tipo }: { tipo: FacturaTipo }) {
+export function FacturaTipoBadge({
+  tipo,
+  sourceType,
+}: {
+  tipo: FacturaTipo | null;
+  sourceType?: FacturaSourceType;
+}) {
+  if (!tipo) {
+    const label =
+      sourceType === 'pdf' || sourceType === 'imagen'
+        ? 'Escaneada (OCR)'
+        : 'Sin tipo';
+    return (
+      <span title={label}>
+        <Badge tone="amber" className="font-mono">
+          OCR
+        </Badge>
+      </span>
+    );
+  }
   return (
-    <Badge tone="indigo" className="font-mono" {...({ title: TIPO_LABELS[tipo] } as any)}>
-      {tipo}
-    </Badge>
+    <span title={TIPO_LABELS[tipo]}>
+      <Badge tone="indigo" className="font-mono">
+        {tipo}
+      </Badge>
+    </span>
   );
 }
 
@@ -79,6 +102,7 @@ export default function Facturas() {
   const [statusFilter, setStatusFilter] = useState<FacturaStatus | ''>('');
   const [tipoFilter, setTipoFilter] = useState<FacturaTipo | ''>('');
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [imagenDrawerOpen, setImagenDrawerOpen] = useState(false);
 
   const queryParams = useMemo(() => {
     const params = new URLSearchParams();
@@ -105,9 +129,16 @@ export default function Facturas() {
         title="Facturas"
         subtitle="Comprobantes electrónicos vinculados a órdenes de compra"
         actions={
-          <Button onClick={() => setDrawerOpen(true)}>
-            <Plus className="w-4 h-4" /> Subir factura
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="secondary" onClick={() => setDrawerOpen(true)}>
+              <FileText className="w-4 h-4" />
+              Subir comprobante electrónico (.xml)
+            </Button>
+            <Button onClick={() => setImagenDrawerOpen(true)}>
+              <Sparkles className="w-4 h-4" />
+              Subir factura escaneada (PDF/foto)
+            </Button>
+          </div>
         }
       />
 
@@ -154,7 +185,13 @@ export default function Facturas() {
         onRowClick={(f) => navigate(`/facturas/${f.id}`)}
         empty={<span>Sin facturas todavía. Subí la primera.</span>}
         columns={[
-          { key: 'tipo', header: 'Tipo', cell: (f) => <FacturaTipoBadge tipo={f.tipoComprobante} /> },
+          {
+            key: 'tipo',
+            header: 'Tipo',
+            cell: (f) => (
+              <FacturaTipoBadge tipo={f.tipoComprobante} sourceType={f.sourceType} />
+            ),
+          },
           {
             key: 'consecutivo',
             header: 'Consecutivo',
@@ -198,12 +235,24 @@ export default function Facturas() {
       <Drawer
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        title="Subir factura"
+        title="Subir comprobante electrónico (.xml)"
         size="md"
       >
         <FacturaUploadForm
           onUploaded={() => setDrawerOpen(false)}
           onCancel={() => setDrawerOpen(false)}
+        />
+      </Drawer>
+
+      <Drawer
+        open={imagenDrawerOpen}
+        onClose={() => setImagenDrawerOpen(false)}
+        title="Subir factura escaneada (OCR)"
+        size="md"
+      >
+        <FacturaImagenUploadForm
+          onUploaded={() => setImagenDrawerOpen(false)}
+          onCancel={() => setImagenDrawerOpen(false)}
         />
       </Drawer>
     </div>

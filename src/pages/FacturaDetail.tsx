@@ -9,13 +9,15 @@ import {
   AlertTriangle,
   ExternalLink,
   RefreshCw,
+  Pencil,
+  Sparkles,
 } from 'lucide-react';
 import { useItem } from '../hooks/useApi';
 import { api, type ApiError } from '../services/api';
 import { useToast } from '../context/ToastContext';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/Button';
-import { Textarea, Field } from '../components/ui/Input';
+import { Input, Select, Textarea, Field } from '../components/ui/Input';
 import { Badge } from '../components/ui/Badge';
 import { Drawer } from '../components/ui/Drawer';
 import { Table } from '../components/ui/Table';
@@ -28,6 +30,7 @@ import {
 
 type FacturaStatus = 'pending' | 'processing' | 'extracted' | 'confirmed' | 'error';
 type FacturaTipo = 'FE' | 'TE' | 'NC' | 'ND' | 'FEC' | 'FEE';
+type FacturaSourceType = 'xml' | 'pdf' | 'imagen';
 
 interface ProveedorMini { id: number; nombre: string }
 interface OcMini {
@@ -50,10 +53,14 @@ interface ExtractedItem {
   codigoCabys?: string;
   descripcion?: string;
   cantidad?: number | string;
+  // XML usa unidadMedida/precioUnitario/ivaMonto; OCR Gemini usa unidad/precio_unitario/iva.
   unidadMedida?: string;
+  unidad?: string;
   precioUnitario?: number | string;
+  precio_unitario?: number | string;
   subtotal?: number | string;
   ivaMonto?: number | string;
+  iva?: number | string;
 }
 
 interface ExtractedTotals {
@@ -74,8 +81,8 @@ interface Factura {
   id: number;
   ocId: number;
   oc: OcMini;
-  sourceType: 'xml' | 'pdf' | 'imagen';
-  tipoComprobante: FacturaTipo;
+  sourceType: FacturaSourceType;
+  tipoComprobante: FacturaTipo | null;
   archivoOriginalPath?: string | null;
   status: FacturaStatus;
   extractedData?: ExtractedData | null;
@@ -147,6 +154,7 @@ export default function FacturaDetail() {
   const [anularOpen, setAnularOpen] = useState(false);
   const [motivo, setMotivo] = useState('');
   const [reuploadOpen, setReuploadOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [downloading, setDownloading] = useState(false);
 
   const canActuar = user?.role === 'admin'; // tipo solo trae admin|user — supervisor mapearía al backend.
@@ -186,9 +194,15 @@ export default function FacturaDetail() {
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
+      const fallbackExt =
+        factura.sourceType === 'pdf'
+          ? 'pdf'
+          : factura.sourceType === 'imagen'
+            ? 'bin'
+            : 'xml';
       const fname =
         factura.archivoOriginalPath?.split('/').pop() ??
-        `factura-${factura.numeroConsecutivo ?? factura.id}.xml`;
+        `factura-${factura.numeroConsecutivo ?? factura.id}.${fallbackExt}`;
       a.href = url;
       a.download = fname;
       document.body.appendChild(a);
@@ -226,6 +240,13 @@ export default function FacturaDetail() {
   const totals = factura.extractedData?.totales ?? {};
   const emisor = factura.extractedData?.emisor;
   const receptor = factura.extractedData?.receptor;
+  const isScanned = factura.sourceType === 'pdf' || factura.sourceType === 'imagen';
+  const confidencePct =
+    factura.confidenceScore != null
+      ? Math.round(Number(factura.confidenceScore) * 100)
+      : null;
+  const showLowConfidenceBanner =
+    isScanned && confidencePct != null && confidencePct < 90;
 
   return (
     <div className="space-y-5">
@@ -239,15 +260,28 @@ export default function FacturaDetail() {
         </button>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            <Badge tone="indigo" className="text-sm px-3 py-1 font-mono">
-              {factura.tipoComprobante}
-            </Badge>
+            {isScanned ? (
+              <Badge tone="amber" className="text-sm px-3 py-1 font-mono">
+                OCR
+              </Badge>
+            ) : (
+              <Badge tone="indigo" className="text-sm px-3 py-1 font-mono">
+                {factura.tipoComprobante ?? '—'}
+              </Badge>
+            )}
             <div className="min-w-0">
               <h1 className="text-xl font-bold text-slate-900 truncate">
-                {factura.numeroConsecutivo ?? `Factura #${factura.id}`}
+                {isScanned
+                  ? `Factura escaneada (OCR) #${factura.id}`
+                  : factura.numeroConsecutivo ?? `Factura #${factura.id}`}
               </h1>
               <p className="text-xs text-slate-500">
-                {FACTURA_TIPO_LABELS[factura.tipoComprobante]} ·{' '}
+                {isScanned
+                  ? `Origen: ${factura.sourceType.toUpperCase()}`
+                  : factura.tipoComprobante
+                    ? FACTURA_TIPO_LABELS[factura.tipoComprobante]
+                    : 'Sin tipo de comprobante'}{' '}
+                ·{' '}
                 <Badge tone={FACTURA_STATUS_TONES[factura.status]}>
                   {FACTURA_STATUS_LABELS[factura.status]}
                 </Badge>
@@ -262,6 +296,11 @@ export default function FacturaDetail() {
 
             {factura.status === 'extracted' && canActuar && (
               <>
+                {isScanned && (
+                  <Button variant="secondary" onClick={() => setEditOpen(true)}>
+                    <Pencil className="w-4 h-4" /> Editar datos extraídos
+                  </Button>
+                )}
                 <Button variant="danger" onClick={() => setAnularOpen(true)}>
                   <XCircle className="w-4 h-4" /> Anular
                 </Button>
@@ -302,6 +341,21 @@ export default function FacturaDetail() {
         </div>
       )}
 
+      {/* Banner OCR low confidence (solo facturas escaneadas con confidence < 90%) */}
+      {showLowConfidenceBanner && (
+        <div className="rounded-lg border border-amber-400 bg-amber-50 px-4 py-3 flex items-start gap-3">
+          <Sparkles className="w-5 h-5 text-amber-700 mt-0.5 shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-amber-900">
+              OCR confidence {confidencePct}% — revisá los datos antes de confirmar.
+            </p>
+            <p className="text-xs text-amber-800 mt-0.5">
+              El modelo no está seguro de algunos campos. Usá "Editar datos extraídos" para corregir antes de confirmar.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Banner confirmed */}
       {factura.status === 'confirmed' && factura.confirmadaPor && (
         <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 flex items-center gap-3">
@@ -330,8 +384,18 @@ export default function FacturaDetail() {
       <Section title="Información general">
         <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
           <Row label="Tipo de comprobante">
-            <span className="font-mono mr-1">{factura.tipoComprobante}</span> ·{' '}
-            <span className="text-slate-600">{FACTURA_TIPO_LABELS[factura.tipoComprobante]}</span>
+            {factura.tipoComprobante ? (
+              <>
+                <span className="font-mono mr-1">{factura.tipoComprobante}</span> ·{' '}
+                <span className="text-slate-600">
+                  {FACTURA_TIPO_LABELS[factura.tipoComprobante]}
+                </span>
+              </>
+            ) : (
+              <span className="text-slate-500 italic">
+                Factura escaneada (no Hacienda)
+              </span>
+            )}
           </Row>
           <Row label="Consecutivo">
             <span className="font-mono">{factura.numeroConsecutivo ?? '—'}</span>
@@ -561,6 +625,121 @@ export default function FacturaDetail() {
           onDone={() => setReuploadOpen(false)}
         />
       </Drawer>
+
+      {/* Drawer editar datos extraídos (solo OCR + estado extracted) */}
+      <Drawer
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        title="Editar datos extraídos"
+        size="sm"
+      >
+        <EditExtractedForm
+          factura={factura}
+          onDone={() => setEditOpen(false)}
+        />
+      </Drawer>
+    </div>
+  );
+}
+
+interface EditExtractedFormProps {
+  factura: Factura;
+  onDone: () => void;
+}
+
+/**
+ * Drawer corto para corregir los datos clave que el OCR puede haber leído mal
+ * antes de confirmar la factura: numero consecutivo, fecha y monto total.
+ *
+ * PUT /api/facturas/:id (campos limitados — ver controllers/facturas-ocr).
+ */
+function EditExtractedForm({ factura, onDone }: EditExtractedFormProps) {
+  const { showToast } = useToast();
+  const qc = useQueryClient();
+  const [numero, setNumero] = useState(factura.numeroConsecutivo ?? '');
+  const [fecha, setFecha] = useState(factura.fechaEmision ?? '');
+  const [amount, setAmount] = useState(
+    factura.montoTotal?.amount != null ? String(factura.montoTotal.amount) : '',
+  );
+  const [currency, setCurrency] = useState<'CRC' | 'USD'>(
+    (factura.montoTotal?.currency as 'CRC' | 'USD') ?? 'CRC',
+  );
+
+  const mutation = useMutation<Factura, ApiError, void>({
+    mutationFn: () =>
+      api.put<Factura>(`/facturas/${factura.id}`, {
+        numeroConsecutivo: numero.trim() || null,
+        fechaEmision: fecha || null,
+        montoTotalAmount: amount === '' ? null : Number(amount),
+        montoTotalCurrency: currency,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['facturas'] });
+      qc.invalidateQueries({ queryKey: ['facturas', factura.id] });
+      showToast('Datos extraídos actualizados', 'success');
+      onDone();
+    },
+    onError: (err) => showToast(err.message || 'Error al guardar', 'error'),
+  });
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-slate-500">
+        Corregí los datos clave antes de confirmar. Solo se editan estos tres
+        campos; el resto del JSON extraído queda igual.
+      </p>
+      <Field label="Número / consecutivo">
+        <Input
+          value={numero}
+          onChange={(e) => setNumero(e.target.value)}
+          placeholder="Ej: 00100001040000134414"
+        />
+      </Field>
+      <Field label="Fecha de emisión">
+        <Input
+          type="date"
+          value={fecha?.slice(0, 10) ?? ''}
+          onChange={(e) => setFecha(e.target.value)}
+        />
+      </Field>
+      <div className="grid grid-cols-3 gap-2">
+        <Field label="Monto total" className="col-span-2">
+          <Input
+            type="number"
+            inputMode="decimal"
+            step="0.01"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="0.00"
+          />
+        </Field>
+        <Field label="Moneda">
+          <Select
+            value={currency}
+            onChange={(e) => setCurrency(e.target.value as 'CRC' | 'USD')}
+          >
+            <option value="CRC">CRC</option>
+            <option value="USD">USD</option>
+          </Select>
+        </Field>
+      </div>
+      <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={onDone}
+          disabled={mutation.isPending}
+        >
+          Cancelar
+        </Button>
+        <Button
+          type="button"
+          onClick={() => mutation.mutate()}
+          disabled={mutation.isPending}
+        >
+          {mutation.isPending ? 'Guardando…' : 'Guardar cambios'}
+        </Button>
+      </div>
     </div>
   );
 }

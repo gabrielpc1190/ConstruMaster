@@ -1,0 +1,60 @@
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# Dependencies — installed fresh in the image
+node_modules
+
+# Build artifacts — produced inside the build stage
+dist
+dist-ssr
+*.tsbuildinfo
+
+# Local data / runtime state
+uploads
+backups
+*.log
+dev.log
+prisma/dev.db
+prisma/dev.db-journal
+
+# Secrets
+.env
+.env.local
+.env.*.local
+
+# Editor / OS noise
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Tests + dev-only assets
+**/__tests__
+**/*.test.js
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.js
+**/*.spec.ts
+**/*.spec.tsx
+tests
+test-results
+tests/results
+tests/test-results*
+
+# Docs not needed at runtime
+README.md
+CLAUDE.md
+docs
+
+# Cache
+.cache
+*.tmp
+*.temp
+
+# Old archives (just in case)
+ConstruMaster-django-old
+_archive

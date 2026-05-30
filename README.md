@@ -95,6 +95,74 @@ ConstruMaster/
 └── vite.config.ts          # Proxy /api → :3001, dev en :8000
 ```
 
+## Deploy a producción
+
+El build de producción empaqueta el frontend estático dentro del mismo proceso Express: **una sola imagen, un solo puerto (`3001` interno → `127.0.0.1:8000` en el host)**. Cloudflare Tunnel apunta a `localhost:8000` igual que en dev, así que no hay que tocar la config del tunnel al cambiar entre stacks.
+
+Stack en prod:
+
+- `Dockerfile` multi-stage (`node:22-alpine`, `dumb-init`, runtime sin devDeps).
+- `docker-compose.prod.yml` — services `postgres` (volumen separado `construmaster_v2_pgdata_prod`) + `app` (volumen `construmaster_v2_uploads`).
+- App corre como user `node` (no root).
+
+### Pasos
+
+1. **Variables de entorno** — completar `.env`:
+
+   ```bash
+   cp .env.example .env
+   # Llenar al menos:
+   #   POSTGRES_PASSWORD           → openssl rand -hex 32
+   #   DATABASE_URL                → usar el mismo password (host=localhost para dev; el container override apunta a host=postgres)
+   #   JWT_SECRET                  → openssl rand -hex 64
+   #   ALLOWED_ORIGINS             → https://construmaster.inventitec.com
+   #   ADMIN_BOOTSTRAP_PASSWORD    → opcional (solo se usa en el seed)
+   #   BCCR_TOKEN / GEMINI_API_KEY → según lo que se quiera habilitar
+   ```
+
+2. **Build de la imagen** (~2-3 min la primera vez, después tira de cache):
+
+   ```bash
+   ./manage.sh build-prod
+   ```
+
+3. **Levantar el stack**:
+
+   ```bash
+   ./manage.sh up-prod
+   ```
+
+4. **Primera vez** — aplicar migraciones y sembrar datos iniciales (idempotente):
+
+   ```bash
+   ./manage.sh migrate-prod
+   docker compose -f docker-compose.prod.yml exec app node prisma/seed.js
+   ```
+
+   `migrate-prod` usa `prisma migrate deploy` (no `migrate dev`, que es interactivo y no aplica en containers). Para generar migraciones nuevas seguí usando `npx prisma migrate dev` en local contra el postgres de dev, commiteá la carpeta y volvé a correr `migrate-prod`.
+
+5. **Verificar arranque**:
+
+   ```bash
+   ./manage.sh logs-prod
+   # Esperar: "[server] listening on http://localhost:3001"
+   curl -sf http://127.0.0.1:8000/api/health   # {"ok":true}
+   ```
+
+6. **Cloudflare Tunnel** ya en el host debe apuntar a `http://localhost:8000`. No corre dentro del compose para no duplicar config con otros servicios del NAS.
+
+### Operación
+
+| Comando | Descripción |
+|---|---|
+| `./manage.sh build-prod` | Build / rebuild de la imagen. |
+| `./manage.sh up-prod` | Up detached. |
+| `./manage.sh down-prod` | Stop. Volúmenes (`pgdata_prod`, `uploads`) persisten. |
+| `./manage.sh logs-prod` | `logs -f --tail=200 app`. |
+| `./manage.sh migrate-prod` | `prisma migrate deploy` dentro del container. |
+
+> **Importante**: NO corras `up-prod` mientras el dev server esté arriba — ambos pelean por `127.0.0.1:8000`. Hacé `./manage.sh stop` primero.
+
 ## Tests
 
 **Backend** (node:test nativo, sin frameworks externos):

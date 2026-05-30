@@ -1,8 +1,8 @@
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   Home, Building2, Warehouse, Users, Package,
-  FileText, ClipboardList, CreditCard,
-  Receipt, Truck, TrendingUp,
+  FileSearch, FileText, ClipboardList, CreditCard,
+  Receipt, Truck, TrendingUp, BarChart3,
   Shield,
   LogOut, Sun, Moon, HardHat,
 } from 'lucide-react';
@@ -41,6 +41,7 @@ export default function Layout() {
     {
       title: 'Compras',
       items: [
+        { path: '/solicitudes-cotizacion', icon: FileSearch, label: 'Solicitudes de cotización' },
         { path: '/cotizaciones', icon: FileText, label: 'Cotizaciones' },
         { path: '/ocs', icon: ClipboardList, label: 'Órdenes de compra' },
         { path: '/pagos', icon: CreditCard, label: 'Pagos' },
@@ -54,9 +55,10 @@ export default function Layout() {
       ],
     },
     {
-      title: 'Finanzas',
+      title: 'Análisis',
       items: [
         { path: '/tipo-cambio', icon: TrendingUp, label: 'Tipo de cambio' },
+        { path: '/reportes', icon: BarChart3, label: 'Reportes' },
       ],
     },
   ];

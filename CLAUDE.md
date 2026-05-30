@@ -180,7 +180,6 @@ Costo aproximado: ~milésimas de dólar por documento OCR (~$0.30/mes en los vol
 - **Reportes / dashboards avanzados**: `Dashboard.tsx` tiene 4 KPIs en vivo (obras activas, cotizaciones por aprobar, OCs autorizadas, facturas por confirmar) + listas de pendientes, pero sin gráficos ni reportes por período/proveedor/obra.
 - **Build de producción**: solo dev server. Falta multi-stage Dockerfile + serve estático con Express o nginx.
 - **Frontend tests**: sin runner configurado (verificación manual). Falta Vitest + RTL.
-- **Tests rojos**: 2 tests fallan al 2026-05-28 (`entregas.test.js` — filtro por `ocId`; `facturas.test.js` — filtro list por `ocId/status/tipoComprobante`). 241/243 pasan.
 
 ## Modelos Prisma (22)
 

@@ -26,6 +26,61 @@ export interface CategoriaLite {
   nombre: string;
 }
 
+export type RfqEstado = 'abierta' | 'cerrada' | 'cancelada';
+
+export interface UserLite {
+  id: number;
+  username: string;
+  fullName?: string | null;
+}
+
+/**
+ * Solicitud de Cotización (SC). En UI siempre hablamos de "Solicitud de
+ * cotización" — el nombre interno `Rfq` matchea el modelo Prisma.
+ */
+export interface Rfq {
+  id: number;
+  obraId: number;
+  obra?: ObraLite;
+  categoriaId: number;
+  categoria?: CategoriaLite;
+  descripcion: string;
+  fechaRequerida?: string | null;
+  creadaPorId: number;
+  creadaPor?: UserLite;
+  estado: RfqEstado;
+  esEspecial?: boolean;
+  notas?: string | null;
+  createdAt: string;
+  updatedAt?: string;
+  cotizaciones?: RfqCotizacionLite[];
+  _count?: { cotizaciones?: number };
+}
+
+/**
+ * Cotización embebida en el detalle de la SC (panel de comparación).
+ * Trae proveedor + count de items + totales para mostrar lado a lado.
+ */
+export interface RfqCotizacionLite {
+  id: number;
+  numeroCotizacion: string;
+  fecha: string;
+  fechaValidez?: string | null;
+  moneda: Moneda;
+  totalAmount: string;
+  totalCurrency: Moneda;
+  subtotalAmount?: string;
+  ivaAmount?: string;
+  plazoEntregaDias?: number | null;
+  pctAnticipo?: string | null;
+  condicionesPago?: string | null;
+  estado: 'recibida' | 'en_revision' | 'aprobada' | 'rechazada' | 'vencida';
+  proveedorId: number;
+  proveedor?: { id: number; nombre: string; identificacion?: string | null };
+  archivoPath?: string | null;
+  _count?: { items?: number };
+}
+
 export interface CotizacionItem {
   id?: number;
   materialId?: number | null;

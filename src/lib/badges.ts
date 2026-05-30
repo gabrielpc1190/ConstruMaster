@@ -13,6 +13,7 @@ export type OcEstado =
   | 'entregada_parcial'
   | 'completada'
   | 'cancelada';
+export type RfqEstado = 'abierta' | 'cerrada' | 'cancelada';
 
 interface BadgeMeta {
   label: string;
@@ -26,6 +27,16 @@ export const COTIZACION_ESTADO_META: Record<CotizacionEstado, BadgeMeta> = {
   rechazada: { label: 'Rechazada', tone: 'red' },
   vencida: { label: 'Vencida', tone: 'orange' },
 };
+
+export const RFQ_ESTADO_META: Record<RfqEstado, BadgeMeta> = {
+  abierta: { label: 'Abierta', tone: 'blue' },
+  cerrada: { label: 'Cerrada', tone: 'emerald' },
+  cancelada: { label: 'Cancelada', tone: 'red' },
+};
+
+export function rfqMeta(estado: string): BadgeMeta {
+  return RFQ_ESTADO_META[estado as RfqEstado] ?? { label: estado, tone: 'slate' };
+}
 
 export const OC_ESTADO_META: Record<OcEstado, BadgeMeta> = {
   autorizada: { label: 'Autorizada', tone: 'blue' },

@@ -26,6 +26,9 @@ import Entregas from './pages/Entregas';
 import EntregaDetail from './pages/EntregaDetail';
 import TipoDeCambio from './pages/TipoDeCambio';
 import Usuarios from './pages/Usuarios';
+import Rfqs from './pages/Rfqs';
+import RfqDetail from './pages/RfqDetail';
+import Reportes from './pages/Reportes';
 
 function App() {
   return (
@@ -47,6 +50,8 @@ function App() {
                     <Route path="/proveedores" element={<Proveedores />} />
                     <Route path="/catalogo" element={<Catalogo />} />
 
+                    <Route path="/solicitudes-cotizacion" element={<Rfqs />} />
+                    <Route path="/solicitudes-cotizacion/:id" element={<RfqDetail />} />
                     <Route path="/cotizaciones" element={<Cotizaciones />} />
                     <Route path="/cotizaciones/new" element={<CotizacionForm />} />
                     <Route path="/cotizaciones/:id" element={<CotizacionDetail />} />
@@ -63,6 +68,7 @@ function App() {
                     <Route path="/entregas/:id" element={<EntregaDetail />} />
 
                     <Route path="/tipo-cambio" element={<TipoDeCambio />} />
+                    <Route path="/reportes" element={<Reportes />} />
 
                     <Route path="/usuarios" element={<Usuarios />} />
                   </Route>

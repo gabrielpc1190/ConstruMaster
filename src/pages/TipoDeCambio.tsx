@@ -23,6 +23,7 @@ import { Table } from '../components/ui/Table';
 import { Drawer } from '../components/ui/Drawer';
 import { Badge } from '../components/ui/Badge';
 import { PageHeader } from '../components/ui/PageHeader';
+import { Chart } from '../components/Chart';
 import { formatDate } from '../lib/format';
 
 interface ExchangeRate {
@@ -207,16 +208,8 @@ export default function TipoDeCambio() {
         )}
       </div>
 
-      {/* TODO Fase 2: SVG line chart de últimos 30 días (compra+venta). */}
-      <div className="bg-white rounded-lg ring-1 ring-slate-200 p-4 mb-6">
-        <div className="flex items-center justify-between mb-1">
-          <h3 className="text-sm font-medium text-slate-700">Tendencia 30 días</h3>
-          <Badge tone="amber">Pendiente</Badge>
-        </div>
-        <p className="text-xs text-slate-500">
-          Gráfico de líneas (compra/venta) — pendiente para Fase 2.
-        </p>
-      </div>
+      {/* Gráfico de tendencia: últimos 30 días disponibles en `rates`. */}
+      <Trend30dChart rates={rates} />
 
       {/* Filtros */}
       <div className="bg-white rounded-lg ring-1 ring-slate-200 p-4 mb-4 flex flex-wrap items-end gap-3">
@@ -335,6 +328,53 @@ export default function TipoDeCambio() {
           <button type="submit" className="hidden" aria-hidden />
         </form>
       </Drawer>
+    </div>
+  );
+}
+
+/**
+ * Gráfico de tendencia de últimos 30 días: compra (slate) + venta (indigo).
+ * Usa los `rates` ya cargados por el query padre. Filtra los más recientes 30.
+ */
+function Trend30dChart({ rates }: { rates: ExchangeRate[] }) {
+  const last30 = useMemo(() => {
+    // Los rates vienen ordenados desc por fecha; tomamos los primeros 30 y
+    // reordenamos asc para el chart.
+    const sliced = rates.slice(0, 30);
+    return sliced
+      .map((r) => ({ ...r, _ts: new Date(r.date).getTime() }))
+      .sort((a, b) => a._ts - b._ts);
+  }, [rates]);
+
+  return (
+    <div className="bg-white rounded-lg ring-1 ring-slate-200 p-4 mb-6">
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-sm font-medium text-slate-700">
+          Tendencia últimos {last30.length} día{last30.length === 1 ? '' : 's'}
+        </h3>
+      </div>
+      <Chart
+        height={220}
+        yLabel="₡ por USD"
+        formatY={(n) =>
+          new Intl.NumberFormat('en-US', {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 0,
+          }).format(n)
+        }
+        series={[
+          {
+            label: 'Compra',
+            color: '#64748b', // slate
+            points: last30.map((r) => ({ x: new Date(r.date), y: Number(r.buy) })),
+          },
+          {
+            label: 'Venta',
+            color: '#4f46e5', // indigo
+            points: last30.map((r) => ({ x: new Date(r.date), y: Number(r.sell) })),
+          },
+        ]}
+      />
     </div>
   );
 }

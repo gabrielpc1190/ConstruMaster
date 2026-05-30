@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Plus, FileText } from 'lucide-react';
 import { useList } from '../hooks/useApi';
 import { Button } from '../components/ui/Button';
@@ -116,6 +116,23 @@ export default function Cotizaciones() {
           },
           { key: 'proveedor', header: 'Proveedor', cell: (c) => c.proveedor?.nombre ?? '—' },
           { key: 'obra', header: 'Obra', cell: (c) => c.obra?.nombre ?? '—' },
+          {
+            key: 'rfq',
+            header: 'SC',
+            cell: (c) =>
+              c.rfqId ? (
+                <Link
+                  to={`/solicitudes-cotizacion/${c.rfqId}`}
+                  onClick={(e) => e.stopPropagation()}
+                  className="inline-flex"
+                  title="Ver solicitud de cotización"
+                >
+                  <Badge tone="indigo" className="hover:underline cursor-pointer">SC #{c.rfqId}</Badge>
+                </Link>
+              ) : (
+                <span className="text-slate-300">—</span>
+              ),
+          },
           { key: 'fecha', header: 'Fecha', cell: (c) => formatDate(c.fecha) },
           {
             key: 'total',

@@ -383,3 +383,114 @@ export const cotizacionArchivoUpload = multer({
     files: 1,
   },
 }).single('archivo');
+
+// ---------------------------------------------------------------------------
+// Multer middleware para subida de FACTURA ESCANEADA (PDF/imagen)
+// ---------------------------------------------------------------------------
+//
+// Para facturas no-electrónicas que el operador recibe en PDF o foto y deben
+// pasar por OCR Gemini (`services/gemini-ocr.js`). Mismo layout en disco que
+// el XML para mantener consistencia: `facturas/<año>/<mes>/<ocId>/<uuid>-<safe>`.
+//
+// Acepta: application/pdf, image/jpeg, image/png, image/heic, image/heif,
+//         image/webp. Field name: `archivo` (single).
+// Máx: 20 MiB por archivo.
+
+const FACTURA_IMAGEN_MIME_TYPES = new Set([
+  'application/pdf',
+  'image/jpeg',
+  'image/png',
+  'image/heic',
+  'image/heif',
+  'image/webp',
+]);
+const FACTURA_IMAGEN_EXT_WHITELIST = new Set([
+  '.pdf',
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.heic',
+  '.heif',
+  '.webp',
+]);
+
+function facturaImagenFileFilter(_req, file, cb) {
+  const ext = extname(file.originalname || '').toLowerCase();
+  if (
+    FACTURA_IMAGEN_MIME_TYPES.has(file.mimetype) ||
+    FACTURA_IMAGEN_EXT_WHITELIST.has(ext)
+  ) {
+    return cb(null, true);
+  }
+  const err = new Error(
+    `Tipo de archivo no permitido (mime=${file.mimetype}, ext=${ext}). Esperado PDF, JPEG, PNG, HEIC, HEIF o WEBP.`,
+  );
+  err.status = 415;
+  err.code = 'INVALID_FILE_TYPE';
+  return cb(err);
+}
+
+const facturaImagenStorage = multer.diskStorage({
+  destination(req, _file, cb) {
+    try {
+      const ocId = req.params.ocId ?? req.params.id ?? 'unknown';
+      const date = new Date();
+      const year = String(date.getUTCFullYear());
+      const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+      const dir = join(UPLOADS_ROOT, 'facturas', year, month, String(ocId));
+      if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true });
+      }
+      cb(null, dir);
+    } catch (err) {
+      cb(err);
+    }
+  },
+  filename(_req, file, cb) {
+    try {
+      const safe = sanitizeFilename(file.originalname);
+      cb(null, `${randomUUID()}-${safe}`);
+    } catch (err) {
+      cb(err);
+    }
+  },
+});
+
+/**
+ * Genera la ruta de destino RELATIVA a `uploads/` para una factura escaneada.
+ *
+ * Layout: `facturas/<año>/<mes>/<ocId>/<uuid>-<sanitized>` (mismo que XML).
+ *
+ * @param {{ ocId: string|number|bigint, originalName: string, now?: Date }} args
+ * @returns {{ relativePath: string, absolutePath: string, filename: string, dir: string }}
+ */
+export function factImagenStoragePath({ ocId, originalName, now }) {
+  const date = now instanceof Date ? now : new Date();
+  const year = String(date.getUTCFullYear());
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const safeName = sanitizeFilename(originalName);
+  const filename = `${randomUUID()}-${safeName}`;
+  const dirRel = `facturas/${year}/${month}/${String(ocId)}`;
+  const relativePath = `${dirRel}/${filename}`;
+  const absolutePath = join(UPLOADS_ROOT, dirRel, filename);
+  return {
+    relativePath,
+    absolutePath,
+    filename,
+    dir: join(UPLOADS_ROOT, dirRel),
+  };
+}
+
+/**
+ * Middleware multer para subida de factura escaneada (PDF/imagen). Lee un
+ * único archivo del field `archivo`. Tira 415 si el mimetype no es PDF/imagen,
+ * 413 si excede 20 MiB.
+ */
+export const facturaImagenUpload = multer({
+  storage: facturaImagenStorage,
+  fileFilter: facturaImagenFileFilter,
+  limits: {
+    fileSize: 20 * 1024 * 1024, // 20 MiB
+    files: 1,
+  },
+}).single('archivo');

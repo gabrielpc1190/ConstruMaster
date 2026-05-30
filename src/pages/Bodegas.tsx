@@ -10,10 +10,6 @@ import { Drawer } from '../components/ui/Drawer';
 import { Badge } from '../components/ui/Badge';
 import { PageHeader } from '../components/ui/PageHeader';
 
-// TODO Fase 2: cuando exista GET /api/clientes reemplazar este default.
-const DEFAULT_CLIENTE_ID = 1;
-const DEFAULT_CLIENTE_NOMBRE = 'Nicholas Charles Rowley';
-
 interface Bodega {
   id: number;
   clienteId: number;
@@ -27,15 +23,29 @@ interface Bodega {
   createdAt: string;
 }
 
+interface Cliente {
+  id: number;
+  nombre: string;
+}
+
+interface UserRow {
+  id: number;
+  username: string;
+  fullName: string | null;
+  role: 'admin' | 'supervisor' | 'operativo' | 'lector';
+  isActive: boolean;
+}
+
 interface CreateBodegaInput {
   clienteId: number;
   nombre: string;
   direccion?: string;
-  responsableId?: number;
+  responsableId?: number | null;
   notas?: string;
 }
 
 interface UpdateBodegaInput {
+  clienteId?: number;
   nombre?: string;
   direccion?: string | null;
   responsableId?: number | null;
@@ -44,12 +54,23 @@ interface UpdateBodegaInput {
 }
 
 interface FormState {
+  clienteId: number | '';
   nombre: string;
   direccion: string;
+  responsableId: number | '';
   notas: string;
 }
 
-const emptyForm: FormState = { nombre: '', direccion: '', notas: '' };
+const emptyForm: FormState = {
+  clienteId: '',
+  nombre: '',
+  direccion: '',
+  responsableId: '',
+  notas: '',
+};
+
+// Roles aptos para ser responsable de bodega (excluimos lectores).
+const RESPONSABLE_ROLES: ReadonlyArray<UserRow['role']> = ['admin', 'supervisor', 'operativo'];
 
 export default function Bodegas() {
   const { user } = useAuth();
@@ -61,7 +82,9 @@ export default function Bodegas() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
-  const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
+  const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>(
+    {},
+  );
 
   const queryKey = useMemo(
     () => ['bodegas', { activo: activoFilter || undefined }] as const,
@@ -69,6 +92,12 @@ export default function Bodegas() {
   );
   const path = activoFilter ? `/bodegas?activo=${activoFilter}` : '/bodegas';
   const { data: bodegas = [], isLoading } = useList<Bodega>(queryKey, path);
+  const { data: clientes = [] } = useList<Cliente>(['clientes'], '/clientes');
+  const { data: users = [] } = useList<UserRow>(['users'], '/users');
+  const responsableOptions = useMemo(
+    () => users.filter((u) => RESPONSABLE_ROLES.includes(u.role)),
+    [users],
+  );
 
   const createBodega = useCreate<CreateBodegaInput, Bodega>('/bodegas', [['bodegas']]);
   const updateBodega = useUpdate<UpdateBodegaInput, Bodega>((id) => `/bodegas/${id}`, [['bodegas']]);
@@ -91,14 +120,21 @@ export default function Bodegas() {
   };
 
   const openCreate = () => {
-    resetForm();
+    // Preselección de cliente si solo hay uno.
+    const preselectedCliente =
+      clientes.length === 1 ? clientes[0].id : '';
+    setForm({ ...emptyForm, clienteId: preselectedCliente });
+    setErrors({});
+    setEditingId(null);
     setDrawerOpen(true);
   };
 
   const openEdit = (b: Bodega) => {
     setForm({
+      clienteId: b.clienteId,
       nombre: b.nombre,
       direccion: b.direccion ?? '',
+      responsableId: b.responsableId ?? '',
       notas: b.notas ?? '',
     });
     setErrors({});
@@ -115,14 +151,18 @@ export default function Bodegas() {
     e.preventDefault();
     const next: typeof errors = {};
     if (!form.nombre.trim()) next.nombre = 'Nombre es requerido';
+    if (!editingId && form.clienteId === '') next.clienteId = 'Seleccioná un cliente';
     if (Object.keys(next).length) {
       setErrors(next);
       return;
     }
+    const responsableId =
+      form.responsableId === '' ? null : Number(form.responsableId);
     if (editingId) {
       const payload: UpdateBodegaInput = {
         nombre: form.nombre.trim(),
         direccion: form.direccion.trim() || null,
+        responsableId,
         notas: form.notas.trim() || null,
       };
       updateBodega.mutate(
@@ -137,9 +177,10 @@ export default function Bodegas() {
       );
     } else {
       const payload: CreateBodegaInput = {
-        clienteId: DEFAULT_CLIENTE_ID,
+        clienteId: Number(form.clienteId),
         nombre: form.nombre.trim(),
         direccion: form.direccion.trim() || undefined,
+        responsableId,
         notas: form.notas.trim() || undefined,
       };
       createBodega.mutate(payload, {
@@ -268,8 +309,33 @@ export default function Bodegas() {
         }
       >
         <form onSubmit={handleSubmit} className="space-y-4">
-          <Field label="Cliente">
-            <Input value={DEFAULT_CLIENTE_NOMBRE} disabled />
+          <Field
+            label="Cliente"
+            required
+            error={errors.clienteId}
+            hint={
+              clientes.length === 1
+                ? 'Único cliente disponible; preseleccionado.'
+                : undefined
+            }
+          >
+            <Select
+              value={form.clienteId === '' ? '' : String(form.clienteId)}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  clienteId: e.target.value === '' ? '' : Number(e.target.value),
+                })
+              }
+              disabled={!!editingId || clientes.length <= 1}
+            >
+              <option value="">— Seleccionar cliente —</option>
+              {clientes.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nombre}
+                </option>
+              ))}
+            </Select>
           </Field>
 
           <Field label="Nombre" required error={errors.nombre}>
@@ -289,11 +355,24 @@ export default function Bodegas() {
             />
           </Field>
 
-          <Field
-            label="Responsable"
-            hint="Pendiente: necesita endpoint GET /api/users (Fase 2)."
-          >
-            <Input value="—" disabled />
+          <Field label="Responsable" hint="Operativo a cargo de la bodega.">
+            <Select
+              value={form.responsableId === '' ? '' : String(form.responsableId)}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  responsableId:
+                    e.target.value === '' ? '' : Number(e.target.value),
+                })
+              }
+            >
+              <option value="">— Sin responsable —</option>
+              {responsableOptions.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.fullName ?? u.username}
+                </option>
+              ))}
+            </Select>
           </Field>
 
           <Field label="Notas">

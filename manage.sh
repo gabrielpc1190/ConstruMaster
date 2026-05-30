@@ -2,6 +2,7 @@
 
 APP_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 LOG_FILE="$APP_DIR/dev.log"
+PROD_COMPOSE="$APP_DIR/docker-compose.prod.yml"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -73,6 +74,29 @@ case "$1" in
     fi
     ;;
 
+  build-prod)
+    docker compose -f "$PROD_COMPOSE" build
+    ;;
+
+  up-prod)
+    docker compose -f "$PROD_COMPOSE" up -d
+    echo -e "${GREEN}Prod stack up. App on 127.0.0.1:8000 (container :3001).${NC}"
+    ;;
+
+  down-prod)
+    docker compose -f "$PROD_COMPOSE" down
+    ;;
+
+  logs-prod)
+    docker compose -f "$PROD_COMPOSE" logs -f --tail=200 app
+    ;;
+
+  migrate-prod)
+    # `migrate deploy` is non-interactive (vs. `migrate dev`, which prompts).
+    # It only applies migrations already committed under prisma/migrations/.
+    docker compose -f "$PROD_COMPOSE" exec app npx prisma migrate deploy
+    ;;
+
   reset-admin)
     if [ -z "$2" ]; then
       echo "Usage: ./manage.sh reset-admin <new_password>"
@@ -105,6 +129,12 @@ case "$1" in
     echo "  status             Show service status"
     echo "  logs               Tail dev.log"
     echo "  reset-admin <pwd>  Reset admin password"
+    echo ""
+    echo "  build-prod         Build the production Docker image"
+    echo "  up-prod            Start the prod stack (postgres + app) detached"
+    echo "  down-prod          Stop the prod stack"
+    echo "  logs-prod          Tail prod app logs"
+    echo "  migrate-prod       Run 'prisma migrate deploy' inside the app container"
     echo ""
     exit 1
     ;;
