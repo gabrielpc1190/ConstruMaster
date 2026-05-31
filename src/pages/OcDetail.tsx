@@ -137,11 +137,11 @@ export default function OcDetail() {
               label="Tiempo estimado"
               value={oc.tiempoEstimadoDias != null ? `${oc.tiempoEstimadoDias} días` : '—'}
             />
-            {oc.cotizacionId && (
+            {oc.cotizacionOrigenId && (
               <Info
                 label="Cotización origen"
                 value={
-                  <Link to={`/cotizaciones/${oc.cotizacionId}`} className="text-indigo-600 hover:underline">
+                  <Link to={`/cotizaciones/${oc.cotizacionOrigenId}`} className="text-indigo-600 hover:underline">
                     Ver cotización →
                   </Link>
                 }

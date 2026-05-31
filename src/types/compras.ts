@@ -141,7 +141,7 @@ export interface Oc {
   obra?: ObraLite;
   proveedorId: number;
   proveedor?: ProveedorLite;
-  cotizacionId?: number | null;
+  cotizacionOrigenId?: number | null;
   categoriaId?: number | null;
   categoria?: CategoriaLite | null;
   numeroOc: string;

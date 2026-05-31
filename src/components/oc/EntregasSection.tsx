@@ -112,11 +112,11 @@ export function EntregasSection({ ocId }: { ocId: number }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [createdEntregaId, setCreatedEntregaId] = useState<number | null>(null);
 
-  const { data: entregasResponse, isLoading } = useItem<{ items: EntregaRow[] }>(
+  const { data: entregasResponse, isLoading } = useItem<EntregaRow[]>(
     ['entregas', { ocId }],
     `/entregas?ocId=${ocId}`,
   );
-  const entregas = entregasResponse?.items ?? [];
+  const entregas = entregasResponse ?? [];
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['entregas'] });

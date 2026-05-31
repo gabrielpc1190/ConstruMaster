@@ -54,8 +54,8 @@ export default function Entregas() {
     [ocFilter, desde, hasta],
   );
 
-  const { data, isLoading } = useItem<{ items: EntregaRow[] }>(queryKey, `/entregas${queryParams}`);
-  const rows = data?.items ?? [];
+  const { data, isLoading } = useItem<EntregaRow[]>(queryKey, `/entregas${queryParams}`);
+  const rows = data ?? [];
 
   const { data: ocs = [] } = useList<OcOption>(['ocs', 'all-for-filter'], '/ocs');
 

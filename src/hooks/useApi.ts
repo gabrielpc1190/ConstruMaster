@@ -1,8 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../services/api';
 
-export function useList<T>(key: readonly unknown[], path: string) {
-  return useQuery<T[]>({ queryKey: key, queryFn: () => api.get<T[]>(path) });
+export function useList<T>(key: readonly unknown[], path: string, enabled = true) {
+  return useQuery<T[]>({ queryKey: key, queryFn: () => api.get<T[]>(path), enabled });
 }
 
 export function useItem<T>(key: readonly unknown[], path: string, enabled = true) {

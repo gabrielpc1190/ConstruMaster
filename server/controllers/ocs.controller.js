@@ -14,6 +14,7 @@
 import { z } from 'zod';
 import prisma from '../db.js';
 import { auditUpdate, getIp } from '../lib/audit.js';
+import { ocOut } from '../lib/money.js';
 
 function safeAuditUpdate(args) {
   return auditUpdate(prisma, args).catch((err) => console.error('[audit:ocs]', err));
@@ -66,7 +67,12 @@ export async function listOcs(req, res) {
     const where = {};
     if (obraId) where.obraId = toBig(obraId) ?? undefined;
     if (proveedorId) where.proveedorId = toBig(proveedorId) ?? undefined;
-    if (estado) where.estado = String(estado);
+    if (estado) {
+      // Aceptar "autorizada,pagada,..." (CSV) además de un único estado.
+      const list = String(estado).split(',').map((s) => s.trim()).filter(Boolean);
+      if (list.length === 1) where.estado = list[0];
+      else if (list.length > 1) where.estado = { in: list };
+    }
 
     const rows = await prisma.ordenCompra.findMany({
       where,
@@ -77,7 +83,7 @@ export async function listOcs(req, res) {
         _count: { select: { items: true, pagos: true, entregas: true } },
       },
     });
-    return res.json(rows);
+    return res.json(rows.map((r) => ocOut(r)));
   } catch (err) {
     logErr('listOcs', err);
     return res.status(500).json({ error: 'Internal error' });
@@ -101,7 +107,7 @@ export async function getOc(req, res) {
       },
     });
     if (!row) return bad(res, 'OC no encontrada', 404);
-    return res.json(row);
+    return res.json(ocOut(row));
   } catch (err) {
     logErr('getOc', err);
     return res.status(500).json({ error: 'Internal error' });
@@ -152,7 +158,7 @@ export async function updateOc(req, res) {
       userId: userIdFromReq(req),
       ipAddress: getIp(req),
     });
-    return res.json(updated);
+    return res.json(ocOut(updated));
   } catch (err) {
     logErr('updateOc', err);
     return res.status(500).json({ error: 'Internal error' });
@@ -210,7 +216,7 @@ export async function cancelarOc(req, res) {
       userId: userIdFromReq(req),
       ipAddress: getIp(req),
     });
-    return res.json(updated);
+    return res.json(ocOut(updated));
   } catch (err) {
     logErr('cancelarOc', err);
     return res.status(500).json({ error: 'Internal error' });

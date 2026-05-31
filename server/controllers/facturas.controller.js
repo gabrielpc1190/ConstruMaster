@@ -129,6 +129,10 @@ function facturaToJson(f) {
       ? {
           id: Number(f.oc.id),
           numeroOc: f.oc.numeroOc,
+          montoTotal:
+            f.oc.montoTotalAmount != null
+              ? { amount: dec(f.oc.montoTotalAmount), currency: f.oc.montoTotalCurrency }
+              : null,
           proveedor: f.oc.proveedor
             ? { id: Number(f.oc.proveedor.id), nombre: f.oc.proveedor.nombre }
             : null,
@@ -163,7 +167,7 @@ export async function listFacturas(req, res) {
     const facturas = await prisma.factura.findMany({
       where,
       include: {
-        oc: { select: { id: true, numeroOc: true, proveedor: { select: { id: true, nombre: true } } } },
+        oc: { select: { id: true, numeroOc: true, montoTotalAmount: true, montoTotalCurrency: true, proveedor: { select: { id: true, nombre: true } } } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -184,7 +188,7 @@ export async function getFactura(req, res) {
     const factura = await prisma.factura.findUnique({
       where: { id },
       include: {
-        oc: { select: { id: true, numeroOc: true, proveedor: { select: { id: true, nombre: true } } } },
+        oc: { select: { id: true, numeroOc: true, montoTotalAmount: true, montoTotalCurrency: true, proveedor: { select: { id: true, nombre: true } } } },
         confirmadaPor: { select: { id: true, username: true, fullName: true } },
       },
     });
@@ -268,7 +272,7 @@ export async function uploadFacturaXml(req, res) {
       const withRels = await prisma.factura.findUnique({
         where: { id: factura.id },
         include: {
-          oc: { select: { id: true, numeroOc: true, proveedor: { select: { id: true, nombre: true } } } },
+          oc: { select: { id: true, numeroOc: true, montoTotalAmount: true, montoTotalCurrency: true, proveedor: { select: { id: true, nombre: true } } } },
         },
       });
       return res.status(202).json({ ...facturaToJson(withRels), queued: true, jobId: queued.id });
@@ -279,7 +283,7 @@ export async function uploadFacturaXml(req, res) {
     const withRels = await prisma.factura.findUnique({
       where: { id: updated.id },
       include: {
-        oc: { select: { id: true, numeroOc: true, proveedor: { select: { id: true, nombre: true } } } },
+        oc: { select: { id: true, numeroOc: true, montoTotalAmount: true, montoTotalCurrency: true, proveedor: { select: { id: true, nombre: true } } } },
       },
     });
 
@@ -345,7 +349,7 @@ export async function confirmarFactura(req, res) {
         confirmadaPorId: BigInt(req.user.id),
       },
       include: {
-        oc: { select: { id: true, numeroOc: true, proveedor: { select: { id: true, nombre: true } } } },
+        oc: { select: { id: true, numeroOc: true, montoTotalAmount: true, montoTotalCurrency: true, proveedor: { select: { id: true, nombre: true } } } },
         confirmadaPor: { select: { id: true, username: true, fullName: true } },
       },
     });

@@ -21,6 +21,7 @@ import prisma from '../db.js';
 import { approveCotizacion } from '../services/oc-flow.js';
 import { absoluteFromUploads, relativeToUploads } from '../lib/uploads.js';
 import { auditCreate, auditUpdate, getIp } from '../lib/audit.js';
+import { cotizacionOut, ocOut } from '../lib/money.js';
 
 function safeAuditCreate(args) {
   return auditCreate(prisma, args).catch((err) => console.error('[audit:cotizaciones]', err));
@@ -158,7 +159,7 @@ export async function listCotizaciones(req, res) {
       orderBy: [{ fecha: 'desc' }, { createdAt: 'desc' }],
       include: { proveedor: true, obra: true },
     });
-    return res.json(rows);
+    return res.json(rows.map(cotizacionOut));
   } catch (err) {
     logHandlerError('listCotizaciones', err);
     return res.status(500).json({ error: 'Internal error' });
@@ -176,10 +177,18 @@ export async function getCotizacion(req, res) {
         proveedor: true,
         obra: true,
         rfq: true,
+        ocs: {
+          select: { id: true, numeroOc: true, estado: true, fechaAprobacion: true },
+          orderBy: { fechaAprobacion: 'desc' },
+        },
       },
     });
     if (!row) return bad(res, 'Cotización no encontrada', 404);
-    return res.json(row);
+    // Mapeo legacy: el frontend lee `cotizacion.oc` (singular). Tomamos la
+    // OC más reciente generada por la aprobación de esta cotización.
+    const out = cotizacionOut(row);
+    out.oc = row.ocs && row.ocs.length > 0 ? row.ocs[0] : null;
+    return res.json(out);
   } catch (err) {
     logHandlerError('getCotizacion', err);
     return res.status(500).json({ error: 'Internal error' });
@@ -368,7 +377,7 @@ export async function updateCotizacion(req, res) {
       userId: userIdFromReq(req),
       ipAddress: getIp(req),
     });
-    return res.json(updated);
+    return res.json(cotizacionOut(updated));
   } catch (err) {
     logHandlerError('updateCotizacion', err);
     return res.status(500).json({ error: 'Internal error' });
@@ -419,7 +428,10 @@ export async function aprobarCotizacion(req, res) {
         ipAddress: getIp(req),
       });
     }
-    return res.status(201).json(result);
+    return res.status(201).json({
+      cotizacion: cotizacionOut(result.cotizacion),
+      oc: ocOut(result.oc),
+    });
   } catch (err) {
     if (err.code === 'COTIZACION_TERMINAL') {
       return res.status(409).json({ error: 'Cotización ya está en estado terminal', estado: err.estado });
@@ -714,7 +726,7 @@ export async function rechazarCotizacion(req, res) {
       userId: userIdFromReq(req),
       ipAddress: getIp(req),
     });
-    return res.json(updated);
+    return res.json(cotizacionOut(updated));
   } catch (err) {
     logHandlerError('rechazarCotizacion', err);
     return res.status(500).json({ error: 'Internal error' });

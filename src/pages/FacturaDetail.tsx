@@ -157,7 +157,7 @@ export default function FacturaDetail() {
   const [editOpen, setEditOpen] = useState(false);
   const [downloading, setDownloading] = useState(false);
 
-  const canActuar = user?.role === 'admin'; // tipo solo trae admin|user — supervisor mapearía al backend.
+  const canActuar = user?.role === 'admin' || user?.role === 'supervisor';
 
   const confirmMutation = useMutation<Factura, ApiError, void>({
     mutationFn: () => api.post<Factura>(`/facturas/${facturaId}/confirmar`),
