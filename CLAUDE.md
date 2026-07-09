@@ -6,6 +6,8 @@ production: false
 status: active
 stack: [react, vite, typescript, express, prisma, postgres]
 repo: "git@github.com:gabrielpc1190/ConstruMaster.git"
+tags: [clientes, nicholas-rowley]
+related: [Presupuestor, Propiedades360]
 ---
 
 # ConstruMaster v2 — CLAUDE.md
