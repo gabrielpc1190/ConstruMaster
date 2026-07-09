@@ -1,3 +1,13 @@
+---
+type: project
+title: ConstruMaster
+description: "Webapp v2 (rewrite post-Django) para que Gabriel/Diana supervisen las obras que ADITA ejecuta para Nicholas Rowley: cotizaciones (OCR Gemini Flash-Lite), OCs, pagos+hitos, entregas con fotos, facturas XML Hacienda CR, tipo de cambio BCCR y usuarios."
+production: false
+status: active
+stack: [react, vite, typescript, express, prisma, postgres]
+repo: "git@github.com:gabrielpc1190/ConstruMaster.git"
+---
+
 # ConstruMaster v2 — CLAUDE.md
 
 Webapp interna para supervisión de obras de construcción. v2 es un rewrite full-stack JS arrancado el 2026-05-27 sobre el stack de [Propiedades360](../Propiedades360/), reemplazando al MVP Django archivado en [`../ConstruMaster-django-old/`](../ConstruMaster-django-old/) (NO TOCAR).
