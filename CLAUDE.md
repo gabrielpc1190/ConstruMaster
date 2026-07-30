@@ -3,7 +3,7 @@ type: project
 title: ConstruMaster
 description: "Webapp v2 (rewrite post-Django) para que Gabriel/Diana supervisen las obras que ADITA ejecuta para Nicholas Rowley: cotizaciones (OCR Gemini Flash-Lite), OCs, pagos+hitos, entregas con fotos, facturas XML Hacienda CR, tipo de cambio BCCR y usuarios."
 production: false
-status: active
+status: inactive
 stack: [react, vite, typescript, express, prisma, postgres]
 repo: "git@github.com:gabrielpc1190/ConstruMaster.git"
 tags: [clientes, nicholas-rowley]
