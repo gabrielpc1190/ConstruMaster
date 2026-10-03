@@ -149,7 +149,7 @@ Stack en prod:
    curl -sf http://127.0.0.1:8000/api/health   # {"ok":true}
    ```
 
-6. **Cloudflare Tunnel** ya en el host debe apuntar a `http://localhost:8000`. No corre dentro del compose para no duplicar config con otros servicios del NAS.
+6. **Cloudflare Tunnel** ya en el host debe apuntar a `http://localhost:8000`. No corre dentro del compose para no duplicar config con otros servicios de DevClaude.
 
 ### Operación
 
